@@ -53,7 +53,19 @@ chunk_size = 1000
 chunks = [domains[i:i + chunk_size] for i in range(0, len(domains), chunk_size)]
 print(f"Split into {len(chunks)} chunks.")
 
-# Step 3: Delete old lists (named Adblock_List_*)
+# Step 3: Delete existing policy if it exists (to detach lists)
+response = requests.get(f"{base_url}/rules", headers=headers)
+data = check_api_response(response, "getting rules")
+rules = data.get('result') or []  # Handle None as []
+
+adblock_rule = next((rule for rule in rules if rule['name'] == 'Block Ads'), None)
+if adblock_rule:
+    rule_id = adblock_rule['id']
+    delete_response = requests.delete(f"{base_url}/rules/{rule_id}", headers=headers)
+    check_api_response(delete_response, "deleting policy")
+    print("Deleted existing Block Ads policy to detach lists.")
+
+# Step 4: Delete old lists (named Adblock_List_*)
 response = requests.get(f"{base_url}/lists", headers=headers)
 data = check_api_response(response, "getting lists")
 lists = data.get('result') or []  # Handle None as []
@@ -64,7 +76,7 @@ for lst in lists:
         check_api_response(delete_response, f"deleting list {lst['name']}")
         print(f"Deleted old list: {lst['name']}")
 
-# Step 4: Create new lists and collect their IDs
+# Step 5: Create new lists and collect their IDs
 list_ids = []
 for i, chunk in enumerate(chunks, 1):
     list_name = f"Adblock_List_{i}"
@@ -80,20 +92,13 @@ for i, chunk in enumerate(chunks, 1):
     list_ids.append(list_id)
     print(f"Created list: {list_name} with {len(chunk)} items (ID: {list_id}).")
 
-# Step 5: Create or update the DNS blocking policy
+# Step 6: Create the DNS blocking policy
 # Build expression for domain + subdomain blocking: any(dns.domains[*] in $id1) or any(dns.domains[*] in $id2) or ...
 if list_ids:
     expression = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in list_ids])
 else:
     print("No lists created. Skipping policy.")
     sys.exit(0)
-
-# Check if policy exists
-response = requests.get(f"{base_url}/rules", headers=headers)
-data = check_api_response(response, "getting rules")
-rules = data.get('result') or []  # Handle None as []
-
-adblock_rule = next((rule for rule in rules if rule['name'] == 'Block Ads'), None)
 
 data_payload = {
     "action": "block",
@@ -104,16 +109,8 @@ data_payload = {
     "traffic": expression
 }
 
-if adblock_rule:
-    # Update existing rule
-    rule_id = adblock_rule['id']
-    response = requests.put(f"{base_url}/rules/{rule_id}", headers=headers, data=json.dumps(data_payload))
-    check_api_response(response, "updating policy")
-    print("Updated existing Block Ads policy.")
-else:
-    # Create new rule
-    response = requests.post(f"{base_url}/rules", headers=headers, data=json.dumps(data_payload))
-    check_api_response(response, "creating policy")
-    print("Created new Block Ads policy.")
+response = requests.post(f"{base_url}/rules", headers=headers, data=json.dumps(data_payload))
+check_api_response(response, "creating policy")
+print("Created new Block Ads policy.")
 
 print("Update complete!")
