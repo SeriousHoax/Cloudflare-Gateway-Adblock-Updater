@@ -43,9 +43,6 @@ domains = set()  # Use set for unique
 for line in lines:
     line = line.strip()
     if line and not line.startswith('#'):
-        # If the line starts with '*.' (wildcard), strip it to make it compatible with Cloudflare lists
-        if line.startswith('*.'):
-            line = line[2:]
         domains.add(line)
 
 domains = list(domains)
@@ -84,9 +81,9 @@ for i, chunk in enumerate(chunks, 1):
     print(f"Created list: {list_name} with {len(chunk)} items (ID: {list_id}).")
 
 # Step 5: Create or update the DNS blocking policy
-# Build expression: dns.fqdn in $id1 or dns.fqdn in $id2 or ...
+# Build expression for domain + subdomain blocking: any(dns.domains[*] in $id1) or any(dns.domains[*] in $id2) or ...
 if list_ids:
-    expression = " or ".join([f"dns.fqdn in ${lid}" for lid in list_ids])
+    expression = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in list_ids])
 else:
     print("No lists created. Skipping policy.")
     sys.exit(0)
