@@ -43,6 +43,9 @@ domains = set()  # Use set for unique
 for line in lines:
     line = line.strip()
     if line and not line.startswith('#'):
+        # If the line starts with '*.' (wildcard), strip it to make it compatible with Cloudflare lists
+        if line.startswith('*.'):
+            line = line[2:]
         domains.add(line)
 
 domains = list(domains)
@@ -64,8 +67,8 @@ for lst in lists:
         check_api_response(delete_response, f"deleting list {lst['name']}")
         print(f"Deleted old list: {lst['name']}")
 
-# Step 4: Create new lists
-list_names = []
+# Step 4: Create new lists and collect their IDs
+list_ids = []
 for i, chunk in enumerate(chunks, 1):
     list_name = f"Adblock_List_{i}"
     data_payload = {
@@ -76,13 +79,14 @@ for i, chunk in enumerate(chunks, 1):
     }
     response = requests.post(f"{base_url}/lists", headers=headers, data=json.dumps(data_payload))
     create_data = check_api_response(response, f"creating list {list_name}")
-    print(f"Created list: {list_name} with {len(chunk)} items.")
-    list_names.append(list_name)
+    list_id = create_data['result']['id']
+    list_ids.append(list_id)
+    print(f"Created list: {list_name} with {len(chunk)} items (ID: {list_id}).")
 
 # Step 5: Create or update the DNS blocking policy
-# Build expression: hostname in $Adblock_List_1 or hostname in $Adblock_List_2 or ...
-if list_names:
-    expression = " or ".join([f'hostname in ${name}' for name in list_names])
+# Build expression: dns.fqdn in $id1 or dns.fqdn in $id2 or ...
+if list_ids:
+    expression = " or ".join([f"dns.fqdn in ${lid}" for lid in list_ids])
 else:
     print("No lists created. Skipping policy.")
     sys.exit(0)
