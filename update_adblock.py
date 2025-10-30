@@ -2,6 +2,7 @@ import requests
 import json
 import os
 import sys
+import time
 
 # Get env vars from GitHub secrets
 api_token = os.environ.get('CLOUDFLARE_API_TOKEN')
@@ -19,6 +20,37 @@ headers = {
     "Content-Type": "application/json"
 }
 
+# Helper function for API requests with retries
+def api_request(method, url, data=None, retries=3, backoff_factor=5):
+    for attempt in range(retries):
+        try:
+            if method == 'GET':
+                response = requests.get(url, headers=headers)
+            elif method == 'POST':
+                response = requests.post(url, headers=headers, data=json.dumps(data))
+            elif method == 'PUT':
+                response = requests.put(url, headers=headers, data=json.dumps(data))
+            elif method == 'DELETE':
+                response = requests.delete(url, headers=headers)
+            else:
+                raise ValueError("Unsupported method")
+
+            if response.status_code >= 500 and attempt < retries - 1:
+                # Retry on 5xx server errors
+                sleep_time = backoff_factor * (2 ** attempt)
+                print(f"Server error {response.status_code} on {method} {url}. Retrying in {sleep_time}s...")
+                time.sleep(sleep_time)
+                continue
+
+            return response
+        except requests.exceptions.RequestException as e:
+            if attempt < retries - 1:
+                sleep_time = backoff_factor * (2 ** attempt)
+                print(f"Request exception on {method} {url}: {e}. Retrying in {sleep_time}s...")
+                time.sleep(sleep_time)
+                continue
+            raise e
+
 # Helper function to check API response
 def check_api_response(response, action):
     if response.status_code != 200:
@@ -32,7 +64,7 @@ def check_api_response(response, action):
 
 # Step 1: Fetch the Hagezi Pro++ blocklist
 blocklist_url = "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt"
-response = requests.get(blocklist_url)
+response = api_request('GET', blocklist_url)  # Note: This is external, but we can retry
 if response.status_code != 200:
     print(f"Error fetching blocklist: {response.status_code}")
     sys.exit(1)
@@ -54,25 +86,25 @@ chunks = [domains[i:i + chunk_size] for i in range(0, len(domains), chunk_size)]
 print(f"Split into {len(chunks)} chunks.")
 
 # Step 3: Delete existing policy if it exists (to detach lists)
-response = requests.get(f"{base_url}/rules", headers=headers)
+response = api_request('GET', f"{base_url}/rules")
 data = check_api_response(response, "getting rules")
 rules = data.get('result') or []  # Handle None as []
 
 adblock_rule = next((rule for rule in rules if rule['name'] == 'Block Ads'), None)
 if adblock_rule:
     rule_id = adblock_rule['id']
-    delete_response = requests.delete(f"{base_url}/rules/{rule_id}", headers=headers)
+    delete_response = api_request('DELETE', f"{base_url}/rules/{rule_id}")
     check_api_response(delete_response, "deleting policy")
     print("Deleted existing Block Ads policy to detach lists.")
 
 # Step 4: Delete old lists (named Adblock_List_*)
-response = requests.get(f"{base_url}/lists", headers=headers)
+response = api_request('GET', f"{base_url}/lists")
 data = check_api_response(response, "getting lists")
 lists = data.get('result') or []  # Handle None as []
 
 for lst in lists:
     if lst['name'].startswith('Adblock_List_'):
-        delete_response = requests.delete(f"{base_url}/lists/{lst['id']}", headers=headers)
+        delete_response = api_request('DELETE', f"{base_url}/lists/{lst['id']}")
         check_api_response(delete_response, f"deleting list {lst['name']}")
         print(f"Deleted old list: {lst['name']}")
 
@@ -86,7 +118,7 @@ for i, chunk in enumerate(chunks, 1):
         "description": "Hagezi Pro++ Adblock Chunk",
         "items": [{"value": domain} for domain in chunk]
     }
-    response = requests.post(f"{base_url}/lists", headers=headers, data=json.dumps(data_payload))
+    response = api_request('POST', f"{base_url}/lists", data_payload)
     create_data = check_api_response(response, f"creating list {list_name}")
     list_id = create_data['result']['id']
     list_ids.append(list_id)
@@ -109,7 +141,7 @@ data_payload = {
     "traffic": expression
 }
 
-response = requests.post(f"{base_url}/rules", headers=headers, data=json.dumps(data_payload))
+response = api_request('POST', f"{base_url}/rules", data_payload)
 check_api_response(response, "creating policy")
 print("Created new Block Ads policy.")
 
