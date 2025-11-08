@@ -64,7 +64,7 @@ def check_api_response(response, action):
 
 # Define blocklists with names and URLs (update Pro++ to LIGHT if desired)
 blocklists = [
-    {"name": "Hagezi Pro++", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt"},  # Change to LIGHT: "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/light-onlydomains.txt"
+    {"name": "Hagezi Pro++", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt"},
     {"name": "Hagezi-DoHVPN", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"},
     {"name": "Samsung-native", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.samsung-onlydomains.txt"},
     {"name": "Vivo-native", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.vivo-onlydomains.txt"},
