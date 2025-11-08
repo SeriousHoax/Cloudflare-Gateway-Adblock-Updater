@@ -62,23 +62,32 @@ def check_api_response(response, action):
         sys.exit(1)
     return data
 
-# Step 1: Fetch the Hagezi Pro++ blocklist
-blocklist_url = "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt"
-response = api_request('GET', blocklist_url)  # Note: This is external, but we can retry
-if response.status_code != 200:
-    print(f"Error fetching blocklist: {response.status_code}")
-    sys.exit(1)
+# Step 1: Fetch the Hagezi blocklists
+blocklist_urls = [
+    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt",
+    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.samsung-onlydomains.txt",
+    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.vivo-onlydomains.txt",
+    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.oppo-realme-onlydomains.txt",
+    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.xiaomi-onlydomains.txt",
+    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.tiktok-onlydomains.txt"
+]
 
-# Process the list: skip comments, trim, unique
-lines = response.text.splitlines()
-domains = set()  # Use set for unique
-for line in lines:
-    line = line.strip()
-    if line and not line.startswith('#'):
-        domains.add(line)
+domains = set()  # Use set for unique across all lists
+for url in blocklist_urls:
+    response = api_request('GET', url)  # Note: This is external, but we can retry
+    if response.status_code != 200:
+        print(f"Error fetching blocklist from {url}: {response.status_code}")
+        sys.exit(1)
+
+    lines = response.text.splitlines()
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith('#'):
+            domains.add(line)
 
 domains = list(domains)
-print(f"Fetched and processed {len(domains)} unique domains.")
+print(f"Fetched and processed {len(domains)} unique domains from all lists.")
 
 # Step 2: Split into chunks of 1000 (free plan limit per list)
 chunk_size = 1000
@@ -115,7 +124,7 @@ for i, chunk in enumerate(chunks, 1):
     data_payload = {
         "name": list_name,
         "type": "DOMAIN",
-        "description": "Hagezi Pro++ Adblock Chunk",
+        "description": "Hagezi Combined Adblock Chunk",
         "items": [{"value": domain} for domain in chunk]
     }
     response = api_request('POST', f"{base_url}/lists", data_payload)
@@ -134,7 +143,7 @@ else:
 
 data_payload = {
     "action": "block",
-    "description": "Block ads using Hagezi Pro++ list",
+    "description": "Block ads using multiple Hagezi lists",
     "enabled": True,
     "filters": ["dns"],
     "name": "Block Ads",
