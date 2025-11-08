@@ -62,96 +62,109 @@ def check_api_response(response, action):
         sys.exit(1)
     return data
 
-# Step 1: Fetch the Hagezi blocklists
-blocklist_urls = [
-    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt",
-    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
-    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.samsung-onlydomains.txt",
-    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.vivo-onlydomains.txt",
-    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.oppo-realme-onlydomains.txt",
-    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.xiaomi-onlydomains.txt",
-    "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.tiktok-onlydomains.txt"
+# Define blocklists with names and URLs
+blocklists = [
+    {"name": "Hagezi Pro++", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt"},
+    {"name": "Hagezi-DoHVPN", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"},
+    {"name": "Samsung-native", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.samsung-onlydomains.txt"},
+    {"name": "Vivo-native", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.vivo-onlydomains.txt"},
+    {"name": "OppoRealme-native", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.oppo-realme-onlydomains.txt"},
+    {"name": "Xiaomi-native", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.xiaomi-onlydomains.txt"},
+    {"name": "TikTok-native", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.tiktok-onlydomains.txt"}
 ]
 
-domains = set()  # Use set for unique across all lists
-for url in blocklist_urls:
-    response = api_request('GET', url)  # Note: This is external, but we can retry
-    if response.status_code != 200:
-        print(f"Error fetching blocklist from {url}: {response.status_code}")
-        sys.exit(1)
+# Process each blocklist separately
+for bl in blocklists:
+    filter_name = bl["name"]
+    blocklist_url = bl["url"]
+    list_prefix = f"{filter_name.replace(' ', '_')}_List_"  # Replace spaces with underscores for prefix
+    policy_name = f"Block {filter_name}"
 
+    print(f"\nProcessing filter: {filter_name}")
+
+    # Step 1: Fetch the blocklist
+    response = api_request('GET', blocklist_url)
+    if response.status_code != 200:
+        print(f"Error fetching blocklist for {filter_name}: {response.status_code}")
+        continue  # Skip to next filter on failure
+
+    # Process the list: skip comments, trim, unique
     lines = response.text.splitlines()
+    domains = set()
     for line in lines:
         line = line.strip()
         if line and not line.startswith('#'):
             domains.add(line)
 
-domains = list(domains)
-print(f"Fetched and processed {len(domains)} unique domains from all lists.")
+    domains = list(domains)
+    print(f"Fetched and processed {len(domains)} unique domains for {filter_name}.")
 
-# Step 2: Split into chunks of 1000 (free plan limit per list)
-chunk_size = 1000
-chunks = [domains[i:i + chunk_size] for i in range(0, len(domains), chunk_size)]
-print(f"Split into {len(chunks)} chunks.")
+    if not domains:
+        print(f"No domains for {filter_name}. Skipping.")
+        continue
 
-# Step 3: Delete existing policy if it exists (to detach lists)
-response = api_request('GET', f"{base_url}/rules")
-data = check_api_response(response, "getting rules")
-rules = data.get('result') or []  # Handle None as []
+    # Step 2: Split into chunks of 1000
+    chunk_size = 1000
+    chunks = [domains[i:i + chunk_size] for i in range(0, len(domains), chunk_size)]
+    print(f"Split {filter_name} into {len(chunks)} chunks.")
 
-adblock_rule = next((rule for rule in rules if rule['name'] == 'Block Ads'), None)
-if adblock_rule:
-    rule_id = adblock_rule['id']
-    delete_response = api_request('DELETE', f"{base_url}/rules/{rule_id}")
-    check_api_response(delete_response, "deleting policy")
-    print("Deleted existing Block Ads policy to detach lists.")
+    # Step 3: Delete existing policy if it exists (to detach lists)
+    response = api_request('GET', f"{base_url}/rules")
+    data = check_api_response(response, "getting rules")
+    rules = data.get('result') or []
 
-# Step 4: Delete old lists (named Adblock_List_*)
-response = api_request('GET', f"{base_url}/lists")
-data = check_api_response(response, "getting lists")
-lists = data.get('result') or []  # Handle None as []
+    adblock_rule = next((rule for rule in rules if rule['name'] == policy_name), None)
+    if adblock_rule:
+        rule_id = adblock_rule['id']
+        delete_response = api_request('DELETE', f"{base_url}/rules/{rule_id}")
+        check_api_response(delete_response, f"deleting policy for {filter_name}")
+        print(f"Deleted existing policy: {policy_name}")
 
-for lst in lists:
-    if lst['name'].startswith('Adblock_List_'):
-        delete_response = api_request('DELETE', f"{base_url}/lists/{lst['id']}")
-        check_api_response(delete_response, f"deleting list {lst['name']}")
-        print(f"Deleted old list: {lst['name']}")
+    # Step 4: Delete old lists for this filter (named {list_prefix}*)
+    response = api_request('GET', f"{base_url}/lists")
+    data = check_api_response(response, "getting lists")
+    lists = data.get('result') or []
 
-# Step 5: Create new lists and collect their IDs
-list_ids = []
-for i, chunk in enumerate(chunks, 1):
-    list_name = f"Adblock_List_{i}"
+    for lst in lists:
+        if lst['name'].startswith(list_prefix):
+            delete_response = api_request('DELETE', f"{base_url}/lists/{lst['id']}")
+            check_api_response(delete_response, f"deleting list {lst['name']} for {filter_name}")
+            print(f"Deleted old list: {lst['name']}")
+
+    # Step 5: Create new lists and collect their IDs
+    list_ids = []
+    for i, chunk in enumerate(chunks, 1):
+        list_name = f"{list_prefix}{i}"
+        data_payload = {
+            "name": list_name,
+            "type": "DOMAIN",
+            "description": f"{filter_name} Adblock Chunk",
+            "items": [{"value": domain} for domain in chunk]
+        }
+        response = api_request('POST', f"{base_url}/lists", data_payload)
+        create_data = check_api_response(response, f"creating list {list_name} for {filter_name}")
+        list_id = create_data['result']['id']
+        list_ids.append(list_id)
+        print(f"Created list: {list_name} with {len(chunk)} items (ID: {list_id}).")
+
+    # Step 6: Create the DNS blocking policy
+    if list_ids:
+        expression = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in list_ids])
+    else:
+        print(f"No lists created for {filter_name}. Skipping policy.")
+        continue
+
     data_payload = {
-        "name": list_name,
-        "type": "DOMAIN",
-        "description": "Hagezi Combined Adblock Chunk",
-        "items": [{"value": domain} for domain in chunk]
+        "action": "block",
+        "description": f"Block using {filter_name} list",
+        "enabled": True,
+        "filters": ["dns"],
+        "name": policy_name,
+        "traffic": expression
     }
-    response = api_request('POST', f"{base_url}/lists", data_payload)
-    create_data = check_api_response(response, f"creating list {list_name}")
-    list_id = create_data['result']['id']
-    list_ids.append(list_id)
-    print(f"Created list: {list_name} with {len(chunk)} items (ID: {list_id}).")
 
-# Step 6: Create the DNS blocking policy
-# Build expression for domain + subdomain blocking: any(dns.domains[*] in $id1) or any(dns.domains[*] in $id2) or ...
-if list_ids:
-    expression = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in list_ids])
-else:
-    print("No lists created. Skipping policy.")
-    sys.exit(0)
+    response = api_request('POST', f"{base_url}/rules", data_payload)
+    check_api_response(response, f"creating policy for {filter_name}")
+    print(f"Created new policy: {policy_name}")
 
-data_payload = {
-    "action": "block",
-    "description": "Block ads using multiple Hagezi lists",
-    "enabled": True,
-    "filters": ["dns"],
-    "name": "Block Ads",
-    "traffic": expression
-}
-
-response = api_request('POST', f"{base_url}/rules", data_payload)
-check_api_response(response, "creating policy")
-print("Created new Block Ads policy.")
-
-print("Update complete!")
+print("\nUpdate complete for all filters!")
