@@ -104,12 +104,11 @@ blocklists = [
 # Pre-cleanup: Delete all old adblock-related policies and lists...
 print("\nPerforming global cleanup of old adblock policies and lists...")
 
-# Cleanup old policies first (expanded to include all variations)
+# Cleanup old policies first (only current names)
 old_policy_names = [
-    "Block Ads", "Block Hagezi ProPlus", "Block Hagezi DoHVPN", "Block Hagezi Samsung", "Block Hagezi Vivo", "Block Hagezi OppoRealme", "Block Hagezi Xiaomi", "Block Hagezi TikTok",
-    "Block Hagezi Pro++", "Block Hagezi-DoHVPN", "Block Hagezi Samsung-native", "Block Hagezi Vivo-native", "Block Hagezi OppoRealme-native", "Block Hagezi Xiaomi-native", "Block Hagezi TikTok-native",
-    "Block Samsung-native", "Block Vivo-native", "Block OppoRealme-native", "Block Xiaomi-native", "Block TikTok-native"
-]  # All possible names
+    "Block Hagezi Pro++", "Block Hagezi-DoHVPN", "Block Samsung-native", "Block Vivo-native",
+    "Block OppoRealme-native", "Block Xiaomi-native", "Block TikTok-native"
+]
 
 response = api_request('GET', f"{base_url}/rules")
 data = check_api_response(response, "getting rules for cleanup")
@@ -121,8 +120,11 @@ for rule in rules:
         check_api_response(delete_response, f"deleting old policy {rule['name']}")
         print(f"Cleaned up old policy: {rule['name']}")
 
-# Now cleanup old lists (safe after policies are deleted)
-old_prefixes = ["Adblock_List_", "ProPlus_List_", "DoHVPN_List_", "Samsung_List_", "Vivo_List_", "OppoRealme_List_", "Xiaomi_List_", "TikTok_List_", "Hagezi_Pro++_List_", "Hagezi-DoHVPN_List_", "Samsung-native_List_", "Vivo-native_List_", "OppoRealme-native_List_", "Xiaomi-native_List_", "TikTok-native_List_"]  # Add any other old prefixes if needed
+# Now cleanup old lists (only current prefixes)
+old_prefixes = [
+    "Hagezi_Pro++_List_", "Hagezi-DoHVPN_List_", "Samsung-native_List_", "Vivo-native_List_",
+    "OppoRealme-native_List_", "Xiaomi-native_List_", "TikTok-native_List_"
+]
 
 response = api_request('GET', f"{base_url}/lists")
 data = check_api_response(response, "getting lists for cleanup")
