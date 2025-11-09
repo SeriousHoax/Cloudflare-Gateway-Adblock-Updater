@@ -62,19 +62,62 @@ def check_api_response(response, action):
         sys.exit(1)
     return data
 
-# Define blocklists with names and URLs (update Pro++ to LIGHT if desired)
+# Define blocklists with names, primary URLs, and jsDelivr backup URLs
 blocklists = [
-    {"name": "Hagezi Pro++", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt"},
-    {"name": "Hagezi-DoHVPN", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"},
-    {"name": "Samsung-native", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.samsung-onlydomains.txt"},
-    {"name": "Vivo-native", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.vivo-onlydomains.txt"},
-    {"name": "OppoRealme-native", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.oppo-realme-onlydomains.txt"},
-    {"name": "Xiaomi-native", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.xiaomi-onlydomains.txt"},
-    {"name": "TikTok-native", "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.tiktok-onlydomains.txt"}
+    {
+        "name": "Hagezi Pro++",
+        "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt",
+        "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt"
+    },
+    {
+        "name": "Hagezi-DoHVPN",
+        "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+        "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"
+    },
+    {
+        "name": "Samsung-native",
+        "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.samsung-onlydomains.txt",
+        "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.samsung-onlydomains.txt"
+    },
+    {
+        "name": "Vivo-native",
+        "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.vivo-onlydomains.txt",
+        "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.vivo-onlydomains.txt"
+    },
+    {
+        "name": "OppoRealme-native",
+        "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.oppo-realme-onlydomains.txt",
+        "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.oppo-realme-onlydomains.txt"
+    },
+    {
+        "name": "Xiaomi-native",
+        "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.xiaomi-onlydomains.txt",
+        "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.xiaomi-onlydomains.txt"
+    },
+    {
+        "name": "TikTok-native",
+        "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.tiktok-onlydomains.txt",
+        "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.tiktok-onlydomains.txt"
+    }
 ]
 
-# Pre-cleanup: Delete all old adblock-related lists (from previous naming schemes)
-print("\nPerforming global cleanup of old adblock lists...")
+# Pre-cleanup: Delete all old adblock-related policies and lists...
+print("\nPerforming global cleanup of old adblock policies and lists...")
+
+# Cleanup old policies first
+old_policy_names = ["Block Ads", "Block Hagezi ProPlus", "Block Hagezi DoHVPN", "Block Hagezi Samsung", "Block Hagezi Vivo", "Block Hagezi OppoRealme", "Block Hagezi Xiaomi", "Block Hagezi TikTok", "Block Hagezi Pro++", "Block Hagezi-DoHVPN", "Block Hagezi Samsung-native", "Block Hagezi Vivo-native", "Block Hagezi OppoRealme-native", "Block Hagezi Xiaomi-native", "Block Hagezi TikTok-native"]  # Add any other old names
+
+response = api_request('GET', f"{base_url}/rules")
+data = check_api_response(response, "getting rules for cleanup")
+rules = data.get('result') or []
+
+for rule in rules:
+    if rule['name'] in old_policy_names:
+        delete_response = api_request('DELETE', f"{base_url}/rules/{rule['id']}")
+        check_api_response(delete_response, f"deleting old policy {rule['name']}")
+        print(f"Cleaned up old policy: {rule['name']}")
+
+# Now cleanup old lists (safe after policies are deleted)
 old_prefixes = ["Adblock_List_", "ProPlus_List_", "DoHVPN_List_", "Samsung_List_", "Vivo_List_", "OppoRealme_List_", "Xiaomi_List_", "TikTok_List_", "Hagezi_Pro++_List_", "Hagezi-DoHVPN_List_", "Samsung-native_List_", "Vivo-native_List_", "OppoRealme-native_List_", "Xiaomi-native_List_", "TikTok-native_List_"]  # Add any other old prefixes if needed
 
 response = api_request('GET', f"{base_url}/lists")
@@ -87,33 +130,32 @@ for lst in lists:
         check_api_response(delete_response, f"deleting old list {lst['name']}")
         print(f"Cleaned up old list: {lst['name']}")
 
-# Also cleanup old policies
-response = api_request('GET', f"{base_url}/rules")
-data = check_api_response(response, "getting rules for cleanup")
-rules = data.get('result') or []
-
-old_policy_names = ["Block Ads", "Block Hagezi ProPlus", "Block Hagezi DoHVPN", "Block Hagezi Samsung", "Block Hagezi Vivo", "Block Hagezi OppoRealme", "Block Hagezi Xiaomi", "Block Hagezi TikTok", "Block Hagezi Pro++", "Block Hagezi-DoHVPN", "Block Hagezi Samsung-native", "Block Hagezi Vivo-native", "Block Hagezi OppoRealme-native", "Block Hagezi Xiaomi-native", "Block Hagezi TikTok-native"]  # Add any other old names
-
-for rule in rules:
-    if rule['name'] in old_policy_names:
-        delete_response = api_request('DELETE', f"{base_url}/rules/{rule['id']}")
-        check_api_response(delete_response, f"deleting old policy {rule['name']}")
-        print(f"Cleaned up old policy: {rule['name']}")
-
 # Process each blocklist separately
 for bl in blocklists:
     filter_name = bl["name"]
-    blocklist_url = bl["url"]
+    primary_url = bl["url"]
+    backup_url = bl.get("backup_url")
     list_prefix = f"{filter_name.replace(' ', '_')}_List_"  # Replace spaces with underscores for prefix
     policy_name = f"Block {filter_name}"
 
     print(f"\nProcessing filter: {filter_name}")
 
-    # Step 1: Fetch the blocklist
-    response = api_request('GET', blocklist_url)
-    if response.status_code != 200:
-        print(f"Error fetching blocklist for {filter_name}: {response.status_code}")
-        continue  # Skip to next filter on failure
+    # Step 1: Fetch the blocklist (try primary, then backup)
+    fetched = False
+    for url in [primary_url, backup_url]:
+        if url is None:
+            continue
+        response = api_request('GET', url)
+        if response.status_code == 200:
+            fetched = True
+            print(f"Successfully fetched from {url}")
+            break
+        else:
+            print(f"Failed to fetch from {url}: {response.status_code}. Trying next...")
+
+    if not fetched:
+        print(f"Error fetching blocklist for {filter_name} from all sources. Skipping.")
+        continue
 
     # Process the list: skip comments, trim, unique
     lines = response.text.splitlines()
