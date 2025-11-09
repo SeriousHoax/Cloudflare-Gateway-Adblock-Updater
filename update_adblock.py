@@ -75,6 +75,11 @@ blocklists = [
         "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt"
     },
     {
+        "name": "Hagezi-DynDNS",
+        "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/dyndns-onlydomains.txt",
+        "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt"
+    },
+    {
         "name": "Samsung-native",
         "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.samsung-onlydomains.txt",
         "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.samsung-onlydomains.txt"
@@ -106,7 +111,7 @@ print("\nPerforming global cleanup of old adblock policies and lists...")
 
 # Cleanup old policies first (only current names)
 old_policy_names = [
-    "Block Hagezi Pro++", "Block Hagezi-DoHVPN", "Block Samsung-native", "Block Vivo-native",
+    "Block Hagezi Pro++", "Block Hagezi-DoHVPN", "Block Hagezi-DynDNS", "Block Samsung-native", "Block Vivo-native",
     "Block OppoRealme-native", "Block Xiaomi-native", "Block TikTok-native"
 ]
 
@@ -122,7 +127,7 @@ for rule in rules:
 
 # Now cleanup old lists (only current prefixes)
 old_prefixes = [
-    "Hagezi_Pro++_List_", "Hagezi-DoHVPN_List_", "Samsung-native_List_", "Vivo-native_List_",
+    "Hagezi_Pro++_List_", "Hagezi-DoHVPN_List_", "Hagezi-DynDNS_List_", "Samsung-native_List_", "Vivo-native_List_",
     "OppoRealme-native_List_", "Xiaomi-native_List_", "TikTok-native_List_"
 ]
 
