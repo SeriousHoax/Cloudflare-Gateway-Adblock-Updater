@@ -104,8 +104,12 @@ blocklists = [
 # Pre-cleanup: Delete all old adblock-related policies and lists...
 print("\nPerforming global cleanup of old adblock policies and lists...")
 
-# Cleanup old policies first
-old_policy_names = ["Block Ads", "Block Hagezi ProPlus", "Block Hagezi DoHVPN", "Block Hagezi Samsung", "Block Hagezi Vivo", "Block Hagezi OppoRealme", "Block Hagezi Xiaomi", "Block Hagezi TikTok", "Block Hagezi Pro++", "Block Hagezi-DoHVPN", "Block Hagezi Samsung-native", "Block Hagezi Vivo-native", "Block Hagezi OppoRealme-native", "Block Hagezi Xiaomi-native", "Block Hagezi TikTok-native"]  # Add any other old names
+# Cleanup old policies first (expanded to include all variations)
+old_policy_names = [
+    "Block Ads", "Block Hagezi ProPlus", "Block Hagezi DoHVPN", "Block Hagezi Samsung", "Block Hagezi Vivo", "Block Hagezi OppoRealme", "Block Hagezi Xiaomi", "Block Hagezi TikTok",
+    "Block Hagezi Pro++", "Block Hagezi-DoHVPN", "Block Hagezi Samsung-native", "Block Hagezi Vivo-native", "Block Hagezi OppoRealme-native", "Block Hagezi Xiaomi-native", "Block Hagezi TikTok-native",
+    "Block Samsung-native", "Block Vivo-native", "Block OppoRealme-native", "Block Xiaomi-native", "Block TikTok-native"
+]  # All possible names
 
 response = api_request('GET', f"{base_url}/rules")
 data = check_api_response(response, "getting rules for cleanup")
