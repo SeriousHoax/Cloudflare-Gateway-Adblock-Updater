@@ -62,7 +62,7 @@ def check_api_response(response, action):
         sys.exit(1)
     return data
 
-# Define blocklists with names, primary URLs, and jsDelivr backup URLs (removed DoHVPN)
+# Define blocklists with names, primary URLs, and jsDelivr backup URLs
 blocklists = [
     {
         "name": "Hagezi Pro++",
@@ -104,9 +104,9 @@ blocklists = [
 # Pre-cleanup: Delete all old adblock-related policies and lists...
 print("\nPerforming global cleanup of old adblock policies and lists...")
 
-# Cleanup old policies first (including DoHVPN for removal)
+# Cleanup old policies first
 old_policy_names = [
-    "Block Hagezi Pro++", "Block Hagezi-DoHVPN", "Block Hagezi-DynDNS", "Block Samsung-native", "Block Vivo-native",
+    "Block Hagezi Pro++", "Block Hagezi-DynDNS", "Block Samsung-native", "Block Vivo-native",
     "Block OppoRealme-native", "Block Xiaomi-native", "Block TikTok-native"
 ]
 
@@ -120,9 +120,9 @@ for rule in rules:
         check_api_response(delete_response, f"deleting old policy {rule['name']}")
         print(f"Cleaned up old policy: {rule['name']}")
 
-# Now cleanup old lists (including DoHVPN for removal)
+# Now cleanup old lists
 old_prefixes = [
-    "Hagezi_Pro++_List_", "Hagezi-DoHVPN_List_", "Hagezi-DynDNS_List_", "Samsung-native_List_", "Vivo-native_List_",
+    "Hagezi_Pro++_List_", "Hagezi-DynDNS_List_", "Samsung-native_List_", "Vivo-native_List_",
     "OppoRealme-native_List_", "Xiaomi-native_List_", "TikTok-native_List_"
 ]
 
