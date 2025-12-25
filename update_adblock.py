@@ -4,6 +4,8 @@
 # License: MIT
 
 import requests
+import aiohttp
+import asyncio
 import json
 import os
 import sys
@@ -30,7 +32,10 @@ MAX_RETRIES = 3
 BACKOFF_FACTOR = 5
 CHUNK_SIZE = 1000
 MAX_LISTS_WARNING = 900
-API_DELAY = 0.1   # Small delay between requests to avoid rate limiting
+API_DELAY = 0.1
+
+# Async configuration
+MAX_CONCURRENT_REQUESTS = int(os.environ.get('MAX_CONCURRENT_REQUESTS', '12'))
 
 # Version tracking configuration
 VERSION_CACHE_FILE = '.blocklist_versions.json'
@@ -47,7 +52,6 @@ headers = {
 
 session = requests.Session()
 session.headers.update(headers)
-
 
 # Version tracking functions
 def load_version_cache() -> Dict[str, str]:
@@ -70,14 +74,9 @@ def save_version_cache(versions: Dict[str, str]):
         logger.warning(f"Could not save version cache: {e}")
 
 def extract_version_from_content(content: str, filter_name: str) -> Optional[str]:
-    """
-    Extract version from blocklist header.
-    Looks for lines like: # Version: 2025.1222.2237.20
-    Also accepts: # Last modified: 22 Dec 2025 22:37 UTC
-    """
-    lines = content.splitlines()[:20]  # Only check first 20 lines
+    """Extract version from blocklist header."""
+    lines = content.splitlines()[:20]
     
-    # First try to find Version line
     for line in lines:
         line = line.strip()
         if line.startswith('# Version:'):
@@ -85,7 +84,6 @@ def extract_version_from_content(content: str, filter_name: str) -> Optional[str
             logger.info(f"  Found version for {filter_name}: {version}")
             return version
     
-    # Fallback: use Last modified as version
     for line in lines:
         line = line.strip()
         if line.startswith('# Last modified:'):
@@ -97,18 +95,13 @@ def extract_version_from_content(content: str, filter_name: str) -> Optional[str
     return None
 
 def fetch_blocklist_version(url: str, backup_url: Optional[str], filter_name: str) -> Optional[str]:
-    """
-    Fetch just the header of a blocklist to extract version.
-    Much faster than downloading the entire file.
-    """
+    """Fetch blocklist header to extract version."""
     for fetch_url in [url, backup_url]:
         if fetch_url is None:
             continue
         try:
-            # Use stream=True to only fetch first few KB
             response = requests.get(fetch_url, timeout=REQUEST_TIMEOUT, stream=True)
             if response.status_code == 200:
-                # Read only first 2KB (enough for headers)
                 content = response.raw.read(2048).decode('utf-8', errors='ignore')
                 response.close()
                 
@@ -116,7 +109,6 @@ def fetch_blocklist_version(url: str, backup_url: Optional[str], filter_name: st
                 if version:
                     return version
                 
-                # If no version found, fallback to fetching full content
                 logger.info(f"  No version in header, fetching full content...")
                 response = requests.get(fetch_url, timeout=REQUEST_TIMEOUT)
                 if response.status_code == 200:
@@ -127,12 +119,13 @@ def fetch_blocklist_version(url: str, backup_url: Optional[str], filter_name: st
     
     return None
 
-def should_update_filter(filter_config: Dict, cached_versions: Dict) -> tuple:
+def should_update_filter(filter_config: Dict, cached_versions: Dict, cached_rules: List[Dict]) -> tuple:
     """
-    Check if a filter needs updating based on version comparison.
+    Check if a filter needs updating based on version comparison AND policy existence.
     Returns: (should_update: bool, current_version: str, reason: str)
     """
     filter_name = filter_config['name']
+    policy_name = f"Block {filter_name}"
     
     # Force update if flag set
     if FORCE_UPDATE_ALL:
@@ -164,37 +157,42 @@ def should_update_filter(filter_config: Dict, cached_versions: Dict) -> tuple:
         logger.info(f"  Version changed: {cached_version} → {current_version}")
         return True, current_version, "Version changed"
     
+    # NEW: Version matches, but verify policy actually exists in Cloudflare
+    policy_exists = any(rule['name'] == policy_name for rule in cached_rules)
+    
+    if not policy_exists:
+        logger.warning(f"  ⚠ Version matches but policy '{policy_name}' missing in Cloudflare!")
+        return True, current_version, "Policy missing (recreating)"
+    
     logger.info(f"  ✅ Version unchanged ({current_version}), skipping update")
     return False, current_version, "Version unchanged"
 
-# Core API functions
+# Sync API functions (for non-critical operations)
 def api_request(method: str, url: str, data: Optional[Dict] = None, 
                 retries: int = MAX_RETRIES, backoff_factor: int = BACKOFF_FACTOR, 
                 timeout: int = REQUEST_TIMEOUT) -> requests.Response:
-    """Make API request with retry logic and rate limit handling."""
+    """Make API request with retry logic (sync version)."""
     last_exception = None
     for attempt in range(1, retries + 1):
         try:
             kwargs = {"timeout": timeout}
             if data:
                 kwargs["json"] = data
-
             response = getattr(session, method.lower())(url, **kwargs)
-
+            
             if response.status_code == 429:
                 retry_after = int(response.headers.get('Retry-After', backoff_factor * (2 ** (attempt - 1))))
                 logger.warning(f"Rate limited (429). Waiting {retry_after}s before retry {attempt}/{retries}...")
                 time.sleep(retry_after)
                 continue
-
+            
             if response.status_code >= 500 and attempt < retries:
                 sleep_time = backoff_factor * (2 ** (attempt - 1))
                 logger.warning(f"Server error {response.status_code}. Retry {attempt}/{retries} in {sleep_time}s...")
                 time.sleep(sleep_time)
                 continue
-
-            return response
             
+            return response
         except requests.exceptions.RequestException as e:
             last_exception = e
             if attempt < retries:
@@ -259,16 +257,131 @@ def get_all_paginated(endpoint: str, per_page: int = 100) -> List[Dict]:
         
         logger.info(f"Fetched {len(all_items)} items from {endpoint} ({page} page(s))")
         return all_items
-        
     except Exception as e:
         logger.error(f"Pagination failed for {endpoint} at page {page}: {e}", exc_info=True)
         raise
 
-def process_filter(filter_config: Dict, cached_lists: List[Dict], cached_rules: List[Dict]) -> Dict:
-    """
-    Process a single blocklist with full recreate
-    This is called only when version changes detected.
-    """
+
+
+# Async API functions
+async def async_api_request(session: aiohttp.ClientSession, method: str, url: str, 
+                           data: Optional[Dict] = None) -> Dict:
+    """Make async API request with retry logic."""
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            kwargs = {"timeout": aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)}
+            if data:
+                kwargs["json"] = data
+            
+            async with getattr(session, method.lower())(url, **kwargs) as response:
+                if response.status == 429:
+                    retry_after = int(response.headers.get('Retry-After', BACKOFF_FACTOR * (2 ** (attempt - 1))))
+                    logger.warning(f"Rate limited (429). Waiting {retry_after}s...")
+                    await asyncio.sleep(retry_after)
+                    continue
+                
+                if response.status >= 500 and attempt < MAX_RETRIES:
+                    sleep_time = BACKOFF_FACTOR * (2 ** (attempt - 1))
+                    logger.warning(f"Server error {response.status}. Retry {attempt}/{MAX_RETRIES}...")
+                    await asyncio.sleep(sleep_time)
+                    continue
+                
+                result = await response.json()
+                return {'status': response.status, 'data': result}
+                
+        except Exception as e:
+            if attempt < MAX_RETRIES:
+                sleep_time = BACKOFF_FACTOR * (2 ** (attempt - 1))
+                await asyncio.sleep(sleep_time)
+            else:
+                raise Exception(f"All retries exhausted for {method} {url}: {e}")
+    
+    raise Exception(f"Unexpected error in async_api_request for {method} {url}")
+
+async def async_delete_list(session: aiohttp.ClientSession, semaphore: asyncio.Semaphore,
+                            list_id: str, list_name: str) -> bool:
+    """Delete a single list asynchronously."""
+    async with semaphore:
+        try:
+            url = f"{base_url}/lists/{list_id}"
+            result = await async_api_request(session, 'DELETE', url)
+            
+            if result['status'] == 200:
+                logger.info(f"✓ Deleted list: {list_name}")
+                await asyncio.sleep(API_DELAY)
+                return True
+            else:
+                logger.warning(f"Failed to delete {list_name}: {result['status']}")
+                return False
+        except Exception as e:
+            logger.warning(f"Error deleting {list_name}: {e}")
+            return False
+
+async def async_create_list(session: aiohttp.ClientSession, semaphore: asyncio.Semaphore,
+                           list_name: str, filter_name: str, chunk_num: int, 
+                           total_chunks: int, domains: List[str]) -> Optional[str]:
+    """Create a single list asynchronously."""
+    async with semaphore:
+        try:
+            data_payload = {
+                "name": list_name,
+                "type": "DOMAIN",
+                "description": f"{filter_name} Chunk {chunk_num}/{total_chunks}",
+                "items": [{"value": domain} for domain in domains]
+            }
+            
+            url = f"{base_url}/lists"
+            result = await async_api_request(session, 'POST', url, data_payload)
+            
+            if result['status'] == 200 and result['data'].get('success'):
+                list_id = result['data']['result']['id']
+                logger.info(f"✓ Created list {chunk_num}/{total_chunks}: {list_name} ({len(domains)} domains)")
+                await asyncio.sleep(API_DELAY)
+                return list_id
+            else:
+                logger.error(f"Failed to create {list_name}: {result}")
+                return None
+        except Exception as e:
+            logger.error(f"Error creating {list_name}: {e}")
+            return None
+
+async def async_delete_lists_batch(lists_to_delete: List[Dict]) -> int:
+    """Delete multiple lists in parallel."""
+    if not lists_to_delete:
+        return 0
+    
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+    
+    async with aiohttp.ClientSession(headers=headers) as session:
+        tasks = [
+            async_delete_list(session, semaphore, lst['id'], lst['name'])
+            for lst in lists_to_delete
+        ]
+        results = await asyncio.gather(*tasks)
+    
+    return sum(1 for r in results if r)
+
+async def async_create_lists_batch(chunks: List[List[str]], filter_name: str, 
+                                  list_prefix: str) -> List[str]:
+    """Create multiple lists in parallel."""
+    if not chunks:
+        return []
+    
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+    
+    async with aiohttp.ClientSession(headers=headers) as session:
+        tasks = [
+            async_create_list(session, semaphore, f"{list_prefix}{i}", 
+                            filter_name, i, len(chunks), chunk)
+            for i, chunk in enumerate(chunks, 1)
+        ]
+        results = await asyncio.gather(*tasks)
+    
+    return [list_id for list_id in results if list_id is not None]
+
+def process_filter_async(filter_config: Dict, cached_lists: List[Dict], 
+                        cached_rules: List[Dict]) -> Dict:
+    """Process a filter with async list operations."""
     filter_name = filter_config["name"]
     primary_url = filter_config["url"]
     backup_url = filter_config.get("backup_url")
@@ -276,10 +389,10 @@ def process_filter(filter_config: Dict, cached_lists: List[Dict], cached_rules: 
     policy_name = f"Block {filter_name}"
 
     logger.info(f"{'='*60}")
-    logger.info(f"Processing filter: {filter_name}")
+    logger.info(f"Processing filter (ASYNC): {filter_name}")
     logger.info(f"{'='*60}")
 
-    # Step 1: Fetch the blocklist
+    # Fetch blocklist
     fetched = False
     content = None
     for url in [primary_url, backup_url]:
@@ -292,16 +405,13 @@ def process_filter(filter_config: Dict, cached_lists: List[Dict], cached_rules: 
                 fetched = True
                 logger.info(f"✓ Successfully fetched from {url}")
                 break
-            else:
-                logger.warning(f"✗ Failed to fetch from {url}: {response.status_code}")
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             logger.warning(f"✗ Error fetching from {url}: {e}")
 
     if not fetched:
-        logger.error(f"✗ Could not fetch {filter_name} from any source. Skipping.")
         return {'success': False, 'filter': filter_name}
 
-    # Step 2: Process domains
+    # Process domains
     lines = content.splitlines()
     domains = set()
     for line in lines:
@@ -313,17 +423,16 @@ def process_filter(filter_config: Dict, cached_lists: List[Dict], cached_rules: 
     logger.info(f"✓ Processed {len(domains):,} unique valid domains")
 
     if not domains:
-        logger.warning(f"✗ No valid domains found. Skipping.")
         return {'success': False, 'filter': filter_name}
 
-    # Step 3: Split into chunks
+    # Split into chunks
     chunks = list(chunker(domains, CHUNK_SIZE))
     logger.info(f"✓ Split into {len(chunks)} chunk(s)")
 
     if len(chunks) > MAX_LISTS_WARNING:
         logger.warning(f"⚠ WARNING: {len(chunks)} chunks is close to Cloudflare's 1000 list limit!")
 
-    # Step 4: Delete existing policy
+    # Delete existing policy (sync - only one)
     adblock_rule = next((rule for rule in cached_rules if rule['name'] == policy_name), None)
     if adblock_rule:
         try:
@@ -333,56 +442,34 @@ def process_filter(filter_config: Dict, cached_lists: List[Dict], cached_rules: 
         except Exception as e:
             logger.warning(f"Could not delete policy {policy_name}: {e}")
 
-    # Step 5: Delete old lists
+    # Delete old lists (ASYNC - parallel!)
     lists_to_delete = [lst for lst in cached_lists if lst['name'].startswith(list_prefix)]
-    for lst in lists_to_delete:
-        try:
-            api_request('DELETE', f"{base_url}/lists/{lst['id']}")
-            logger.info(f"✓ Deleted old list: {lst['name']}")
-            time.sleep(API_DELAY)
-        except Exception as e:
-            logger.warning(f"Could not delete list {lst['name']}: {e}")
+    if lists_to_delete:
+        logger.info(f"Deleting {len(lists_to_delete)} old lists (async)...")
+        start_time = time.time()
+        deleted_count = asyncio.run(async_delete_lists_batch(lists_to_delete))
+        elapsed = time.time() - start_time
+        logger.info(f"✓ Deleted {deleted_count} lists in {elapsed:.1f}s (async)")
 
-    # Step 6: Create new lists
-    list_ids = []
-    for i, chunk in enumerate(chunks, 1):
-        list_name = f"{list_prefix}{i}"
-        data_payload = {
-            "name": list_name,
-            "type": "DOMAIN",
-            "description": f"{filter_name} Chunk {i}/{len(chunks)}",
-            "items": [{"value": domain} for domain in chunk]
-        }
-        
-        try:
-            response = api_request('POST', f"{base_url}/lists", data_payload)
-            create_data = check_api_response(response, f"creating list {list_name}")
-            list_id = create_data['result']['id']
-            list_ids.append(list_id)
-            logger.info(f"✓ Created list {i}/{len(chunks)}: {list_name} ({len(chunk)} domains)")
-            time.sleep(API_DELAY)
-        except Exception as e:
-            logger.error(f"✗ Failed to create list {list_name}: {e}")
-            # Clean up on failure
-            logger.info("Cleaning up partially created lists...")
-            for created_id in list_ids:
-                try:
-                    api_request('DELETE', f"{base_url}/lists/{created_id}")
-                    logger.info(f"Cleaned up list {created_id}")
-                    time.sleep(API_DELAY)
-                except Exception as cleanup_error:
-                    logger.warning(f"Could not cleanup list {created_id}: {cleanup_error}")
-            raise
+    # Create new lists (ASYNC - parallel!)
+    logger.info(f"Creating {len(chunks)} new lists (async)...")
+    start_time = time.time()
+    list_ids = asyncio.run(async_create_lists_batch(chunks, filter_name, list_prefix))
+    elapsed = time.time() - start_time
+    logger.info(f"✓ Created {len(list_ids)} lists in {elapsed:.1f}s (async)")
 
-    # Step 7: Create the DNS blocking policy
     if not list_ids:
         logger.warning(f"✗ No lists created. Skipping policy.")
         return {'success': False, 'filter': filter_name}
 
+    # Create policy with smart priority
     expression = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in list_ids])
     
     if len(expression) > 4000:
         logger.warning(f"⚠ Expression length ({len(expression)}) may exceed Cloudflare limits!")
+    
+    # Get priority from filter config
+    priority = filter_config.get('priority', 99)
     
     data_payload = {
         "action": "block",
@@ -390,58 +477,70 @@ def process_filter(filter_config: Dict, cached_lists: List[Dict], cached_rules: 
         "enabled": True,
         "filters": ["dns"],
         "name": policy_name,
+        "priority": priority,
         "traffic": expression
     }
 
     response = api_request('POST', f"{base_url}/rules", data_payload)
     check_api_response(response, f"creating policy {policy_name}")
-    logger.info(f"✓ Created policy: {policy_name}")
+    logger.info(f"✓ Created policy: {policy_name} (priority={priority})")
 
     return {'success': True, 'filter': filter_name, 'domains': len(domains), 'lists': len(list_ids)}
 
-# Blocklists configuration
+# Blocklists configuration with explicit priorities
+# Priority order (lower number = higher priority):
+# 1-3: Reserved for custom policies (Allow Rules, Content Blocking, etc.)
+# 4-10: Hagezi filters (ordered by importance)
 blocklists: List[Dict[str, str]] = [
     {
         "name": "Hagezi Pro++",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
-        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt"
+        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt",
+        "priority": 4
     },
     {
         "name": "Hagezi-DynDNS",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
-        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/dyndns-onlydomains.txt"
-    },
-    {
-        "name": "Samsung-native",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.samsung-onlydomains.txt",
-        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.samsung-onlydomains.txt"
-    },
-    {
-        "name": "Vivo-native",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.vivo-onlydomains.txt",
-        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.vivo-onlydomains.txt"
-    },
-    {
-        "name": "OppoRealme-native",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.oppo-realme-onlydomains.txt",
-        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.oppo-realme-onlydomains.txt"
+        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/dyndns-onlydomains.txt",
+        "priority": 5
     },
     {
         "name": "Xiaomi-native",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.xiaomi-onlydomains.txt",
-        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.xiaomi-onlydomains.txt"
+        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.xiaomi-onlydomains.txt",
+        "priority": 6
+    },
+    {
+        "name": "OppoRealme-native",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.oppo-realme-onlydomains.txt",
+        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.oppo-realme-onlydomains.txt",
+        "priority": 7
+    },
+    {
+        "name": "Vivo-native",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.vivo-onlydomains.txt",
+        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.vivo-onlydomains.txt",
+        "priority": 8
+    },
+    {
+        "name": "Samsung-native",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.samsung-onlydomains.txt",
+        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.samsung-onlydomains.txt",
+        "priority": 9
     },
     {
         "name": "TikTok-native",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.tiktok-onlydomains.txt",
-        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.tiktok-onlydomains.txt"
+        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.tiktok-onlydomains.txt",
+        "priority": 10
     }
 ]
 
 # Execution
-logger.info("Starting Cloudflare Gateway Adblock Update with VERSION TRACKING...\n")
+logger.info("Starting Cloudflare Gateway Adblock Update (ASYNC V3)...\n")
 logger.info(f"Force update all: {'YES' if FORCE_UPDATE_ALL else 'NO'}")
-logger.info(f"Check versions: {'ENABLED' if CHECK_VERSIONS else 'DISABLED'}\n")
+logger.info(f"Check versions: {'ENABLED' if CHECK_VERSIONS else 'DISABLED'}")
+logger.info(f"Max concurrent requests: {MAX_CONCURRENT_REQUESTS}\n")
 
 # Load version cache
 cached_versions = load_version_cache()
@@ -450,6 +549,15 @@ if cached_versions:
 else:
     logger.info("No version cache found (first run or cache deleted)\n")
 
+# Cache current state for version checking
+logger.info("Caching current rules for policy verification...")
+try:
+    cached_rules_early = get_all_paginated(f"{base_url}/rules")
+    logger.info(f"Cached {len(cached_rules_early)} rules\n")
+except Exception as e:
+    logger.warning(f"Could not cache rules: {e}. Continuing without policy verification...")
+    cached_rules_early = []
+
 # Check which filters need updating
 filters_to_update = []
 updated_versions = {}
@@ -457,7 +565,7 @@ updated_versions = {}
 logger.info("Checking blocklist versions...\n")
 for bl in blocklists:
     filter_name = bl['name']
-    should_update, current_version, reason = should_update_filter(bl, cached_versions)
+    should_update, current_version, reason = should_update_filter(bl, cached_versions, cached_rules_early)
     
     if should_update:
         logger.info(f"✅ {filter_name}: WILL UPDATE ({reason})")
@@ -466,7 +574,6 @@ for bl in blocklists:
             updated_versions[filter_name] = current_version
     else:
         logger.info(f"⏭️  {filter_name}: SKIP ({reason})")
-        # Keep existing version in cache
         if filter_name in cached_versions:
             updated_versions[filter_name] = cached_versions[filter_name]
         if current_version:
@@ -481,7 +588,7 @@ if not filters_to_update:
     logger.info("\n✅ Script completed successfully!")
     sys.exit(0)
 
-# Cache current state (only fetch if we have filters to update)
+# Cache current state
 logger.info("Caching current rules and lists...")
 try:
     cached_rules = get_all_paginated(f"{base_url}/rules")
@@ -491,7 +598,7 @@ except Exception as e:
     logger.error(f"Failed to cache rules/lists: {e}", exc_info=True)
     sys.exit(1)
 
-# Process filters that need updating
+# Process filters with async
 stats = {
     "filters_processed": 0,
     "total_domains": 0,
@@ -500,9 +607,13 @@ stats = {
     "errors": []
 }
 
+script_start = time.time()
+
 for bl in filters_to_update:
     try:
-        result = process_filter(bl, cached_lists, cached_rules)
+        filter_start = time.time()
+        result = process_filter_async(bl, cached_lists, cached_rules)
+        filter_elapsed = time.time() - filter_start
         
         if result['success']:
             stats["filters_processed"] += 1
@@ -510,7 +621,9 @@ for bl in filters_to_update:
             stats["lists_created"] += result.get('lists', 0)
             stats["policies_created"] += 1
             
-            # Refresh cache after each filter
+            logger.info(f"Filter completed in {filter_elapsed:.1f}s")
+            
+            # Refresh cache
             cached_rules = get_all_paginated(f"{base_url}/rules")
             cached_lists = get_all_paginated(f"{base_url}/lists")
         else:
@@ -520,7 +633,9 @@ for bl in filters_to_update:
         logger.error(f"✗ Failed to process {bl['name']}: {e}", exc_info=True)
         stats["errors"].append(bl['name'])
 
-# Save updated version cache
+script_elapsed = time.time() - script_start
+
+# Save version cache
 save_version_cache(updated_versions)
 
 # Summary
@@ -534,6 +649,7 @@ logger.info(f"Total domains: {stats['total_domains']:,}")
 logger.info(f"Lists created: {stats['lists_created']}")
 logger.info(f"Policies created: {stats['policies_created']}")
 logger.info(f"Total lists in account: {len(cached_lists)}")
+logger.info(f"\n⏱️  Total script execution time: {script_elapsed:.1f}s")
 
 if stats['errors']:
     logger.warning(f"\n⚠ Failed filters ({len(stats['errors'])}): {', '.join(stats['errors'])}")
