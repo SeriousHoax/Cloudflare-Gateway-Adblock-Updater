@@ -51,7 +51,7 @@ jobs:
           chmod 600 ~/.ssh/id_signing
 
           # Configure Git for SSH signing
-          git config user.name "SeriousHoax [bot]"
+          git config user.name "SeriousHoax"
           git config user.email "serioushoax@gmail.com"
           git config gpg.format ssh
           git config user.signingkey ~/.ssh/id_signing
