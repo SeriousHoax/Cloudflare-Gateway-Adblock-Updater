@@ -35,7 +35,7 @@ MAX_LISTS_WARNING = 900
 API_DELAY = 0.1   # Small delay between requests to avoid rate limiting
 
 # Async configuration
-MAX_CONCURRENT_REQUESTS = int(os.environ.get('MAX_CONCURRENT_REQUESTS', '12'))
+MAX_CONCURRENT_REQUESTS = int(os.environ.get('MAX_CONCURRENT_REQUESTS', '25'))
 
 # Version tracking configuration
 VERSION_CACHE_FILE = '.blocklist_versions.json'
