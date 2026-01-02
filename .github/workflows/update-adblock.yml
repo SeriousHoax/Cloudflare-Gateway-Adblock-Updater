@@ -42,20 +42,10 @@ jobs:
         run: python update_adblock.py
 
       - name: Commit version cache
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.Action_BOT_SSH_PRIVATE_KEY }}
         run: |
-          # Setup SSH Key
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_signing
-          chmod 600 ~/.ssh/id_signing
-
-          # Configure Git for SSH signing
-          git config user.name "SeriousHoax"
-          git config user.email "serioushoax@gmail.com"
-          git config gpg.format ssh
-          git config user.signingkey ~/.ssh/id_signing
-          git config commit.gpgsign true
+          # Configure Git
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           # Commit and push
           git add .blocklist_versions.json
