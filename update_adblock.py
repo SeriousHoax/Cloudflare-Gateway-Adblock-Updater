@@ -251,6 +251,19 @@ def get_all_paginated(endpoint: str, per_page: int = 100) -> List[Dict]:
         logger.error(f"Pagination failed for {endpoint} at page {page}: {e}", exc_info=True)
         raise
 
+def get_location_id_by_name(location_name: str) -> Optional[str]:
+    """Get location ID (UUID) by location name."""
+    try:
+        all_locations = get_all_paginated(f"{base_url}/locations")
+        for location in all_locations:
+            if location.get('name') == location_name:
+                return location.get('id')
+        logger.warning(f"Location '{location_name}' not found")
+        return None
+    except Exception as e:
+        logger.error(f"Failed to fetch locations: {e}")
+        return None
+
 
 
 # Async API functions
@@ -422,16 +435,6 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
     if len(chunks) > MAX_LISTS_WARNING:
         logger.warning(f"⚠ WARNING: {len(chunks)} chunks is close to Cloudflare's 1000 list limit!")
 
-    # Delete existing policy (sync - only one)
-    adblock_rule = next((rule for rule in cached_rules if rule['name'] == policy_name), None)
-    if adblock_rule:
-        try:
-            api_request('DELETE', f"{base_url}/rules/{adblock_rule['id']}")
-            logger.info(f"✓ Deleted old policy: {policy_name}")
-            time.sleep(API_DELAY)
-        except Exception as e:
-            logger.warning(f"Could not delete policy {policy_name}: {e}")
-
     # Delete old lists (ASYNC - parallel!)
     lists_to_delete = [lst for lst in cached_lists if lst['name'].startswith(list_prefix)]
     if lists_to_delete:
@@ -453,7 +456,30 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
         return {'success': False, 'filter': filter_name}
 
     # Create policy with smart priority
-    expression = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in list_ids])
+    # Build base expression parts
+    location_names = filter_config.get('location_ids', [])
+    
+    if location_names:
+        # For location-specific filters, resolve location names to UUIDs
+        logger.info(f"Resolving location names to IDs: {location_names}")
+        location_uuids = []
+        for loc_name in location_names:
+            loc_id = get_location_id_by_name(loc_name)
+            if loc_id:
+                location_uuids.append(loc_id)
+                logger.info(f"  ✓ Resolved '{loc_name}' to {loc_id}")
+            else:
+                logger.error(f"  ✗ Could not find location: {loc_name}")
+                return {'success': False, 'filter': filter_name}
+        
+        # Build expression with location condition using correct syntax
+        # Cloudflare syntax: dns.location in {"uuid1" "uuid2"}
+        location_set = " ".join([f'"{uuid}"' for uuid in location_uuids])
+        location_condition = f'dns.location in {{{location_set}}}'
+        expression = " or ".join([f"(any(dns.domains[*] in ${lid}) and {location_condition})" for lid in list_ids])
+    else:
+        # Standard expression without location filtering
+        expression = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in list_ids])
     
     if len(expression) > 4000:
         logger.warning(f"⚠ Expression length ({len(expression)}) may exceed Cloudflare limits!")
@@ -489,40 +515,47 @@ blocklists: List[Dict[str, str]] = [
         "priority": 10000
     },
     {
+        "name": "Hagezi DoH/VPN",
+        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+        "priority": 20000,
+        "location_ids": ["Home-Router"]
+    },
+    {
         "name": "Hagezi-DynDNS",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
         "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/dyndns-onlydomains.txt",
-        "priority": 20000
+        "priority": 30000
     },
     {
         "name": "Xiaomi-native",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.xiaomi-onlydomains.txt",
         "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.xiaomi-onlydomains.txt",
-        "priority": 30000
+        "priority": 40000
     },
     {
         "name": "OppoRealme-native",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.oppo-realme-onlydomains.txt",
         "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.oppo-realme-onlydomains.txt",
-        "priority": 40000
+        "priority": 50000
     },
     {
         "name": "Vivo-native",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.vivo-onlydomains.txt",
         "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.vivo-onlydomains.txt",
-        "priority": 50000
+        "priority": 60000
     },
     {
         "name": "Samsung-native",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.samsung-onlydomains.txt",
         "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.samsung-onlydomains.txt",
-        "priority": 60000
+        "priority": 70000
     },
     {
         "name": "TikTok-native",
         "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/native.tiktok-onlydomains.txt",
         "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/native.tiktok-onlydomains.txt",
-        "priority": 70000
+        "priority": 80000
     }
 ]
 
@@ -587,6 +620,27 @@ try:
 except Exception as e:
     logger.error(f"Failed to cache rules/lists: {e}", exc_info=True)
     sys.exit(1)
+
+# Delete all policies for filters that will be updated (to avoid priority conflicts)
+if filters_to_update:
+    logger.info("Deleting old policies for filters that will be updated...")
+    policies_deleted = 0
+    for bl in filters_to_update:
+        policy_name = f"Block {bl['name']}"
+        adblock_rule = next((rule for rule in cached_rules if rule['name'] == policy_name), None)
+        if adblock_rule:
+            try:
+                api_request('DELETE', f"{base_url}/rules/{adblock_rule['id']}")
+                logger.info(f"✓ Deleted old policy: {policy_name}")
+                policies_deleted += 1
+                time.sleep(API_DELAY)
+            except Exception as e:
+                logger.warning(f"Could not delete policy {policy_name}: {e}")
+    
+    if policies_deleted > 0:
+        logger.info(f"✓ Deleted {policies_deleted} old policies\n")
+        # Refresh rules cache after deletions
+        cached_rules = get_all_paginated(f"{base_url}/rules")
 
 # Process filters with async
 stats = {
