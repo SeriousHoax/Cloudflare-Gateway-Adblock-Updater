@@ -454,10 +454,6 @@ def update_policy_for_filter(filter_config: Dict, final_list_ids: List[str],
 
     # Build traffic expression
     expression = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in final_list_ids])
-
-    if len(expression) > 4000:
-        logger.warning(f"⚠ Expression length ({len(expression)}) may exceed Cloudflare limits!")
-
     priority = filter_config.get('priority', 99)
     policy_payload = {
         "action": "block",
