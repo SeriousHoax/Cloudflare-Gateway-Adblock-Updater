@@ -649,10 +649,10 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
     # Calculate Diff
     current_remote_domains = set(remote_domain_to_list_map.keys())
     
-    # Domains to remove: in CF but not in target
+    # Domains to remove: in Gateway but not in Target
     to_remove = current_remote_domains - target_domains
     
-    # Domains to add: in target but not in CF
+    # Domains to add: in Target but not in Gateway
     to_add = list(target_domains - current_remote_domains)
     
     logger.info(f"Diff analysis:")
