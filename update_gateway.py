@@ -136,7 +136,7 @@ def should_update_filter(filter_config: Dict, cached_versions: Dict, cached_rule
         return True, current_version, "First run"
     
     if current_version != cached_version:
-        logger.info(f"  Version changed: {cached_version} → {current_version}")
+        logger.info(f"  ✅ Version changed: {cached_version} → {current_version}")
         return True, current_version, "Version changed"
     
     # Version matches, but verify policy actually exists in Cloudflare
@@ -154,7 +154,7 @@ def should_update_filter(filter_config: Dict, cached_versions: Dict, cached_rule
         logger.info(f"  ⚠ Precedence mismatch: {current_precedence} (current) ≠ {target_precedence} (target)")
         return True, current_version, f"Precedence mismatch ({current_precedence} -> {target_precedence})"
     
-    logger.info(f"  ✅ Version unchanged ({current_version}), skipping update")
+    logger.info(f"  ⏭️ Version unchanged ({current_version}), skipping update")
     return False, current_version, "Version unchanged"
 
 # Sync API functions (for non-critical operations)
@@ -748,8 +748,8 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
 blocklists: List[Dict[str, str]] = [
     {
         "name": "Hagezi Pro++",
-        "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
-        "backup_url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt",
+        "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt",
+        "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
         "priority": 10000
     }
 ]
