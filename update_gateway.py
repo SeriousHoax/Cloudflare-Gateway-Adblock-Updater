@@ -39,7 +39,7 @@ MAX_CONCURRENT_REQUESTS = int(os.environ.get('MAX_CONCURRENT_REQUESTS', '25'))
 
 # Version tracking configuration
 VERSION_CACHE_FILE = 'blocklist_versions.json'
-FORCE_UPDATE_ALL = os.environ.get('FORCE_UPDATE_ALL', 'false').lower() == 'true'
+Fresh_Start = os.environ.get('FRESH_START', 'false').lower() == 'true'
 CHECK_VERSIONS = os.environ.get('CHECK_VERSIONS', 'true').lower() == 'true'
 
 # API base URL
@@ -109,9 +109,9 @@ def should_update_filter(filter_config: Dict, cached_versions: Dict, cached_rule
     filter_name = filter_config['name']
     policy_name = f"Block {filter_name}"
     
-    # Force update if flag set
-    if FORCE_UPDATE_ALL:
-        return True, None, "FORCE_UPDATE_ALL enabled"
+    # Fresh start if flag set
+    if Fresh_Start:
+        return True, None, "Fresh_Start enabled"
     
     # Skip version check if disabled
     if not CHECK_VERSIONS:
@@ -558,7 +558,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
 
     logger.info(f"✓ Target domains: {len(target_domains):,}")
 
-    if not target_domains and not FORCE_UPDATE_ALL: # Safety check, unless forced
+    if not target_domains and not Fresh_Start: # Safety check, unless forced
         logger.warning(f"✗ No domains found in source! Aborting to prevent emptying lists.")
         return {'success': False, 'filter': filter_name}
 
@@ -573,7 +573,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
     logger.info(f"✓ Found {len(existing_lists)} existing lists for {filter_name}")
 
     # Process Lists (Diff vs Full Cleanup)
-    if FORCE_UPDATE_ALL:
+    if Fresh_Start:
         logger.info(f"‼ FULL CLEANUP MODE: Deleting everything first for {filter_name}")
 
         # Delete Policy if exists
@@ -801,7 +801,7 @@ blocklists: List[Dict[str, str]] = [
 # Execution
 if __name__ == "__main__":
     logger.info("Starting Cloudflare Gateway Adblock Update...\n")
-    logger.info(f"Force update all: {'YES' if FORCE_UPDATE_ALL else 'NO'}")
+    logger.info(f"Fresh start: {'YES' if Fresh_Start else 'NO'}")
     logger.info(f"Check versions: {'ENABLED' if CHECK_VERSIONS else 'DISABLED'}")
     logger.info(f"Max concurrent requests: {MAX_CONCURRENT_REQUESTS}\n")
 

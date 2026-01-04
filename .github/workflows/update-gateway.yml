@@ -38,7 +38,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CHECK_VERSIONS: 'true'
-          FORCE_UPDATE_ALL: 'false'
+          FRESH_START: 'false'
         run: python update_gateway.py
 
       - name: Commit version cache
