@@ -529,7 +529,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
     logger.info(f"Processing filter (DIFF-SYNC): {filter_name}")
     logger.info(f"{'='*60}")
 
-    # 1. Fetch blocklist source
+    # Fetch blocklist source
     fetched = False
     content = None
     for url in [primary_url, backup_url]:
@@ -548,7 +548,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
     if not fetched:
         return {'success': False, 'filter': filter_name}
 
-    # 2. Parse domains from source
+    # Parse domains from source
     lines = content.splitlines()
     target_domains = set()
     for line in lines:
@@ -562,7 +562,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
         logger.warning(f"✗ No domains found in source! Aborting to prevent emptying lists.")
         return {'success': False, 'filter': filter_name}
 
-    # 3. Identify existing lists for this filter
+    # Identify existing lists for this filter
     existing_lists = [lst for lst in cached_lists if lst['name'].startswith(list_prefix)]
     # Sort by chunk number
     try:
@@ -572,12 +572,11 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
         
     logger.info(f"✓ Found {len(existing_lists)} existing lists for {filter_name}")
 
-    # 4. Process Lists (Diff vs Full Cleanup)
-    # 4. Process Lists (Diff vs Full Cleanup)
+    # Process Lists (Diff vs Full Cleanup)
     if FORCE_UPDATE_ALL:
         logger.info(f"‼ FULL CLEANUP MODE: Deleting everything first for {filter_name}")
 
-        # 1. Delete Policy if exists
+        # Delete Policy if exists
         # We need to delete the policy first so we can delete the lists it uses
         existing_policy = next((rule for rule in cached_rules if rule['name'] == policy_name), None)
         if existing_policy:
@@ -592,12 +591,12 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
                 logger.error(f"Failed to delete policy {policy_name}: {e}")
                 # We attempt to continue, but if policy deletion failed, list deletion might fail too (in use)
 
-        # 2. Delete ALL existing lists
+        # Delete ALL existing lists
         if existing_lists:
             logger.info(f"Deleting {len(existing_lists)} old lists...")
             asyncio.run(async_delete_lists_batch(existing_lists))
 
-        # 3. Create New Lists
+        # Create New Lists
         domain_list = list(target_domains)
         chunks = list(chunker(domain_list, CHUNK_SIZE))
         
@@ -616,7 +615,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
         created_ids = asyncio.run(create_all_new_chunks_cleanup())
         new_list_ids = [lid for lid in created_ids if lid]
         
-        # 4. Create Policy
+        # Create Policy
         policy_success = update_policy_for_filter(filter_config, new_list_ids, len(target_domains), cached_rules)
 
         if not policy_success:
@@ -624,7 +623,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
 
         return {'success': True, 'filter': filter_name, 'domains': len(target_domains), 'lists': len(new_list_ids)}
 
-    # 4. Fetch current Cloudflare content (ASYNC)
+    # Fetch current Cloudflare content (ASYNC)
     remote_domain_to_list_map = {} # domain -> list_id
     list_capacities = {} # list_id -> current_count
 
@@ -647,7 +646,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
         logger.info("Fetching current list contents from Cloudflare...")
         asyncio.run(fetch_all_current_content())
 
-    # 5. Calculate Diff
+    # Calculate Diff
     current_remote_domains = set(remote_domain_to_list_map.keys())
     
     # Domains to remove: in CF but not in target
@@ -661,7 +660,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
     logger.info(f"  - To add:    {len(to_add)}")
     logger.info(f"  - Unchanged: {len(target_domains) - len(to_add)}")
 
-    # 6. Apply Patches (ASYNC)
+    # Apply Patches (ASYNC)
     
     # Group removals by list
     removals_by_list = {} # list_id -> [domains]
@@ -714,7 +713,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
     else:
         logger.info("No patches needed for existing lists.")
 
-    # 7. Create New Lists for remaining additions
+    # Create New Lists for remaining additions
     new_list_ids = []
     if to_add:
         logger.info(f"Creating new lists for {len(to_add)} remaining domains...")
@@ -747,7 +746,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
         created_ids = asyncio.run(create_new_chunks())
         new_list_ids = [lid for lid in created_ids if lid]
 
-    # 8. Cleanup empty lists
+    # Cleanup empty lists
     # If patches caused a list to become empty (and no appends filled it), we should delete it
     # Check capacities
     lists_to_delete = []
@@ -765,7 +764,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
         
     final_list_ids.extend(new_list_ids)
 
-    # 9. Update/Create Policy
+    # Update/Create Policy
     policy_success = update_policy_for_filter(filter_config, final_list_ids, len(target_domains), cached_rules)
 
     if not policy_success:
