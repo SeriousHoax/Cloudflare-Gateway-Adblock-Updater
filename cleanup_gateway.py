@@ -1,3 +1,11 @@
+# Cloudflare Gateway Adblock Updater - Cleanup Script
+# Description: 
+# Deletes only the Cloudflare Gateway policies and lists created by update_gateway.py. 
+# Manually created policies are not affected.
+#
+# GitHub: https://github.com/SeriousHoax
+# License: MIT
+
 import asyncio
 import logging
 import aiohttp
