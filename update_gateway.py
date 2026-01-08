@@ -214,7 +214,7 @@ def is_valid_domain(domain: str) -> bool:
     """Validate domain format."""
     if not domain or len(domain) > 253:
         return False
-    pattern = r'^([a-z0-9]+(-[a-z0-9]+)*\.)+[a-z]{2,}$'
+    pattern = r'(?i)^([a-z0-9]+(-+[a-z0-9]+)*\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
     return bool(re.match(pattern, domain.lower()))
 
 def chunker(seq: List[str], size: int):
