@@ -1,4 +1,4 @@
-name: Cloudflare Gateway Cleanup - Workflow
+name: Cloudflare Gateway Cleanup
 
 on:
   workflow_dispatch:
