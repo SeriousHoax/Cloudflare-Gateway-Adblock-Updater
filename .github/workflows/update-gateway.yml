@@ -1,4 +1,4 @@
-name: Update Cloudflare Gateway Adblock
+name: Cloudflare Gateway Adblock Updater - Workflow
 
 on:
   schedule:
