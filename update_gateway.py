@@ -38,7 +38,6 @@ API_DELAY = 0.1   # Small delay between requests to avoid rate limiting
 MAX_CONCURRENT_REQUESTS = int(os.environ.get('MAX_CONCURRENT_REQUESTS', '25'))
 
 # Version tracking configuration
-VERSION_CACHE_FILE = 'blocklist_versions.json'
 Fresh_Start = os.environ.get('FRESH_START', 'false').lower() == 'true'
 CHECK_VERSIONS = os.environ.get('CHECK_VERSIONS', 'true').lower() == 'true'
 
@@ -54,24 +53,54 @@ session = requests.Session()
 session.headers.update(headers)
 
 # Version tracking functions
-def load_version_cache() -> Dict[str, str]:
-    """Load cached blocklist versions from file."""
-    if os.path.exists(VERSION_CACHE_FILE):
-        try:
-            with open(VERSION_CACHE_FILE, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.warning(f"Could not load version cache: {e}")
-    return {}
+def extract_version_from_description(description: str) -> Optional[str]:
+    """
+    Extract version from policy description.
+    Returns: version string or None if not found
+    """
+    if not description:
+        return None
+    
+    # Pattern to match ", Version: X.X.X" at the end of description
+    match = re.search(r',\s*Version:\s*([^\s,]+)', description)
+    if match:
+        return match.group(1).strip()
+    return None
 
-def save_version_cache(versions: Dict[str, str]):
-    """Save blocklist versions to cache file."""
-    try:
-        with open(VERSION_CACHE_FILE, 'w') as f:
-            json.dump(versions, f, indent=2)
-        logger.info(f"✓ Saved version cache to {VERSION_CACHE_FILE}")
-    except Exception as e:
-        logger.warning(f"Could not save version cache: {e}")
+def load_versions_from_policies(cached_rules: List[Dict]) -> Dict[str, str]:
+    """
+    Load versions from all policies by extracting from their descriptions.
+    Returns: dict mapping filter_name -> version
+    """
+    versions = {}
+    
+    for rule in cached_rules:
+        rule_name = rule.get('name', '')
+        # Check if this is a blocklist policy (starts with "Block ")
+        if rule_name.startswith('Block '):
+            filter_name = rule_name.replace('Block ', '', 1)
+            description = rule.get('description', '')
+            version = extract_version_from_description(description)
+            
+            if version:
+                versions[filter_name] = version
+                logger.debug(f"Loaded version for {filter_name}: {version}")
+    
+    return versions
+
+def build_description_with_version(filter_name: str, list_count: int, 
+                                   domain_count: int, version: Optional[str]) -> str:
+    """
+    Build policy description with version info.
+    Format: "Block domains from {filter_name} ({list_count} lists, {domain_count} domains), Version: {version}"
+    """
+    base_description = f"Block domains from {filter_name} ({list_count} lists, {domain_count} domains)"
+    
+    if version:
+        return f"{base_description}, Version: {version}"
+    
+    return base_description
+
 
 def fetch_blocklist_version(url: str, backup_url: Optional[str], filter_name: str) -> Optional[str]:
     """Fetch blocklist header to extract version using streaming."""
@@ -101,9 +130,10 @@ def fetch_blocklist_version(url: str, backup_url: Optional[str], filter_name: st
     logger.warning(f"  No version info found for {filter_name}")
     return None
 
-def should_update_filter(filter_config: Dict, cached_versions: Dict, cached_rules: List[Dict]) -> tuple:
+def should_update_filter(filter_config: Dict, cached_rules: List[Dict]) -> tuple:
     """
     Check if a filter needs updating based on version comparison AND policy existence.
+    Reads version from policy description
     Returns: (should_update: bool, current_version: str, reason: str)
     """
     filter_name = filter_config['name']
@@ -128,23 +158,24 @@ def should_update_filter(filter_config: Dict, cached_versions: Dict, cached_rule
         logger.warning(f"  Could not determine version, will update to be safe")
         return True, None, "Version unknown"
     
-    # Compare with cached version
-    cached_version = cached_versions.get(filter_name)
+    # Find the policy in Cloudflare
+    policy = next((rule for rule in cached_rules if rule['name'] == policy_name), None)
+    
+    if not policy:
+        logger.info(f"  No existing policy found, first run for {filter_name}")
+        return True, current_version, "First run (no policy)"
+    
+    # Extract version from policy description
+    policy_description = policy.get('description', '')
+    cached_version = extract_version_from_description(policy_description)
     
     if not cached_version:
-        logger.info(f"  No cached version found, first run for {filter_name}")
-        return True, current_version, "First run"
+        logger.warning(f"  ⚠ Policy exists but no version info in description, treating as first run")
+        return True, current_version, "No version in description (migrating)"
     
     if current_version != cached_version:
         logger.info(f"  ✅ Version changed: {cached_version} → {current_version}")
         return True, current_version, "Version changed"
-    
-    # Version matches, but verify policy actually exists in Cloudflare
-    policy = next((rule for rule in cached_rules if rule['name'] == policy_name), None)
-    
-    if not policy:
-        logger.warning(f"  ⚠ Version matches but policy '{policy_name}' missing in Cloudflare!")
-        return True, current_version, "Policy missing (recreating)"
     
     # Check if precedence matches
     target_precedence = filter_config.get('priority')
@@ -458,8 +489,9 @@ async def async_update_policy(session: aiohttp.ClientSession, policy_id: str,
         return False
 
 def update_policy_for_filter(filter_config: Dict, final_list_ids: List[str], 
-                             target_domain_count: int, cached_rules: List[Dict]) -> bool:
-    """Update or create the policy for a filter."""
+                             target_domain_count: int, cached_rules: List[Dict],
+                             version: Optional[str] = None) -> bool:
+    """Update or create the policy for a filter with version info in description."""
     filter_name = filter_config["name"]
     policy_name = f"Block {filter_name}"
 
@@ -486,9 +518,18 @@ def update_policy_for_filter(filter_config: Dict, final_list_ids: List[str],
         expression = " or ".join([f"any(dns.domains[*] in ${lid})" for lid in final_list_ids])
 
     priority = filter_config.get('priority', 99)
+    
+    # Build description with version info
+    description = build_description_with_version(
+        filter_name, 
+        len(final_list_ids), 
+        target_domain_count, 
+        version
+    )
+    
     policy_payload = {
         "action": "block",
-        "description": f"Block domains from {filter_name} ({len(final_list_ids)} lists, {target_domain_count} domains)",
+        "description": description,
         "enabled": True,
         "filters": ["dns"],
         "name": policy_name,
@@ -548,11 +589,20 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
     if not fetched:
         return {'success': False, 'filter': filter_name}
 
-    # Parse domains from source
+    # Parse domains from source and extract version
     lines = content.splitlines()
     target_domains = set()
+    current_version = None
+    
     for line in lines:
         line = line.strip()
+        
+        # Extract version from header
+        if line.startswith('# Version:') and not current_version:
+            current_version = line.replace('# Version:', '').strip()
+            logger.info(f"✓ Extracted version from blocklist: {current_version}")
+        
+        # Parse domains
         if line and not line.startswith('#') and is_valid_domain(line):
             target_domains.add(line)
 
@@ -616,7 +666,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
         new_list_ids = [lid for lid in created_ids if lid]
         
         # Create Policy
-        policy_success = update_policy_for_filter(filter_config, new_list_ids, len(target_domains), cached_rules)
+        policy_success = update_policy_for_filter(filter_config, new_list_ids, len(target_domains), cached_rules, current_version)
 
         if not policy_success:
             return {'success': False, 'filter': filter_name}
@@ -765,7 +815,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
     final_list_ids.extend(new_list_ids)
 
     # Update/Create Policy
-    policy_success = update_policy_for_filter(filter_config, final_list_ids, len(target_domains), cached_rules)
+    policy_success = update_policy_for_filter(filter_config, final_list_ids, len(target_domains), cached_rules, current_version)
 
     if not policy_success:
         return {'success': False, 'filter': filter_name}
@@ -805,42 +855,35 @@ if __name__ == "__main__":
     logger.info(f"Check versions: {'ENABLED' if CHECK_VERSIONS else 'DISABLED'}")
     logger.info(f"Max concurrent requests: {MAX_CONCURRENT_REQUESTS}\n")
 
-    # Load version cache
-    cached_versions = load_version_cache()
-    if cached_versions:
-        logger.info(f"Loaded {len(cached_versions)} cached versions\n")
-    else:
-        logger.info("No version cache found (first run or cache deleted)\n")
-
-    # Cache current state for version checking
-    logger.info("Caching current rules for policy verification...")
+    # Cache current rules for version checking from policy descriptions
+    logger.info("Fetching current policies to check versions...")
     try:
         cached_rules_early = get_all_paginated(f"{base_url}/rules")
-        logger.info(f"Cached {len(cached_rules_early)} rules\n")
+        logger.info(f"Fetched {len(cached_rules_early)} rules")
     except Exception as e:
-        logger.warning(f"Could not cache rules: {e}. Continuing without policy verification...")
+        logger.warning(f"Could not fetch rules: {e}. Continuing without version checking...")
         cached_rules_early = []
+    
+    # Load versions from policy descriptions
+    cached_versions = load_versions_from_policies(cached_rules_early)
+    if cached_versions:
+        logger.info(f"Loaded {len(cached_versions)} versions from policy descriptions\n")
+    else:
+        logger.info("No version info found in policy descriptions (first run or migration)\n")
 
     # Check which filters need updating
     filters_to_update = []
-    updated_versions = {}
 
     logger.info("Checking blocklist versions...\n")
     for bl in blocklists:
         filter_name = bl['name']
-        should_update, current_version, reason = should_update_filter(bl, cached_versions, cached_rules_early)
+        should_update, current_version, reason = should_update_filter(bl, cached_rules_early)
         
         if should_update:
             logger.info(f"✅ {filter_name}: WILL UPDATE ({reason})")
             filters_to_update.append(bl)
-            if current_version:
-                updated_versions[filter_name] = current_version
         else:
             logger.info(f"⏭️  {filter_name}: SKIP ({reason})")
-            if filter_name in cached_versions:
-                updated_versions[filter_name] = cached_versions[filter_name]
-            if current_version:
-                updated_versions[filter_name] = current_version
 
     logger.info(f"\n{'='*60}")
     logger.info(f"Filters to update: {len(filters_to_update)}/{len(blocklists)}")
@@ -898,8 +941,6 @@ if __name__ == "__main__":
 
     script_elapsed = time.time() - script_start
 
-    # Save version cache
-    save_version_cache(updated_versions)
 
     # Summary
     logger.info(f"\n{'='*60}")
