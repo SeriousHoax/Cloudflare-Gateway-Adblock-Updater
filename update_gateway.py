@@ -93,7 +93,6 @@ def build_description_with_version(filter_name: str, list_count: int,
     """
     Build policy description with version info.
     Format: "Block domains from {filter_name} ({list_count} lists, {domain_count} domains), Version: {version}"
-    If version is None, omits the version part.
     """
     base_description = f"Block domains from {filter_name} ({list_count} lists, {domain_count} domains)"
     
@@ -475,7 +474,7 @@ async def async_update_policy(session: aiohttp.ClientSession, policy_id: str,
 def update_policy_for_filter(filter_config: Dict, final_list_ids: List[str], 
                              target_domain_count: int, cached_rules: List[Dict],
                              version: Optional[str] = None) -> bool:
-    """Update or create the policy for a filter."""
+    """Update or create the policy for a filter with version info in description"""
     filter_name = filter_config["name"]
     policy_name = f"Block {filter_name}"
 
@@ -810,13 +809,13 @@ if __name__ == "__main__":
     logger.info(f"Check versions: {'ENABLED' if CHECK_VERSIONS else 'DISABLED'}")
     logger.info(f"Max concurrent requests: {MAX_CONCURRENT_REQUESTS}\n")
 
-    # Cache current rules for policy checking and version extraction
-    logger.info("Caching current rules for verification...")
+    # Cache current rules for version checking from policy descriptions
+    logger.info("Fetching current policies to check versions...")
     try:
         cached_rules_early = get_all_paginated(f"{base_url}/rules")
-        logger.info(f"Cached {len(cached_rules_early)} rules\n")
+        logger.info(f"Fetched {len(cached_rules_early)} rules")
     except Exception as e:
-        logger.warning(f"Could not cache rules: {e}. Continuing without policy verification...")
+        logger.warning(f"Could not fetch rules: {e}. Continuing without version checking...")
         cached_rules_early = []
 
     # Load versions from policy descriptions
