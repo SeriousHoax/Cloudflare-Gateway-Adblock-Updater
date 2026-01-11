@@ -491,7 +491,7 @@ async def async_update_policy(session: aiohttp.ClientSession, policy_id: str,
 def update_policy_for_filter(filter_config: Dict, final_list_ids: List[str], 
                              target_domain_count: int, cached_rules: List[Dict],
                              version: Optional[str] = None) -> bool:
-    """Update or create the policy for a filter with version info in description."""
+    """Update or create the policy for a filter with version info in description"""
     filter_name = filter_config["name"]
     policy_name = f"Block {filter_name}"
 
