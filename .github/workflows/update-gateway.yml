@@ -9,7 +9,7 @@ jobs:
   update:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout repository
@@ -42,14 +42,3 @@ jobs:
           CHECK_VERSIONS: 'true'
           FRESH_START: 'false'
         run: python update_gateway.py
-
-      - name: Commit version cache
-        run: |
-          # Configure Git
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Commit and push
-          git add blocklist_versions.json
-          git diff --quiet && git diff --staged --quiet || git commit -m "🤖 Update blocklist versions [skip ci]"
-          git push
