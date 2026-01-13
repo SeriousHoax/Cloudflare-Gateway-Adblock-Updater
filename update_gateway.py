@@ -501,7 +501,11 @@ def update_policy_for_filter(filter_config: Dict, final_list_ids: List[str],
         "filters": ["dns"],
         "name": policy_name,
         "precedence": priority,
-        "traffic": expression
+        "traffic": expression,
+        "rule_settings": {
+            "block_page_enabled": True,
+            "block_reason": f"Blocked by {policy_name}"
+        }
     }
 
     # Check if policy exists to determine POST or PUT
