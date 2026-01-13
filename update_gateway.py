@@ -76,9 +76,9 @@ def load_versions_from_policies(cached_rules: List[Dict]) -> Dict[str, str]:
     
     for rule in cached_rules:
         rule_name = rule.get('name', '')
-        # Check if this is a blocklist policy (starts with "Block ")
-        if rule_name.startswith('Block '):
-            filter_name = rule_name.replace('Block ', '', 1)
+        # Check if this is a Hagezi policy (starts with "Hagezi")
+        if rule_name.startswith('Hagezi'):
+            filter_name = rule_name
             description = rule.get('description', '')
             version = extract_version_from_description(description)
             
@@ -135,7 +135,7 @@ def should_update_filter(filter_config: Dict, cached_rules: List[Dict]) -> tuple
     Returns: (should_update: bool, current_version: str, reason: str)
     """
     filter_name = filter_config['name']
-    policy_name = f"Block {filter_name}"
+    policy_name = filter_name
     
     # Fresh start if flag set
     if Fresh_Start:
@@ -476,7 +476,7 @@ def update_policy_for_filter(filter_config: Dict, final_list_ids: List[str],
                              version: Optional[str] = None) -> bool:
     """Update or create the policy for a filter with version info in description"""
     filter_name = filter_config["name"]
-    policy_name = f"Block {filter_name}"
+    policy_name = filter_name
 
     if not final_list_ids:
         logger.warning(f"Total list count is 0! Skipping policy update.")
@@ -531,7 +531,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
     primary_url = filter_config["url"]
     backup_url = filter_config.get("backup_url")
     list_prefix = f"{filter_name.replace(' ', '_')}_List_"
-    policy_name = f"Block {filter_name}"
+    policy_name = filter_name
 
     logger.info(f"{'='*60}")
     logger.info(f"Processing filter (DIFF-SYNC): {filter_name}")
