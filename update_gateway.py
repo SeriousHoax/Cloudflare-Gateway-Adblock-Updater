@@ -837,7 +837,7 @@ if __name__ == "__main__":
             logger.info(f"✅ {filter_name}: WILL UPDATE ({reason})")
             filters_to_update.append(bl)
         else:
-            logger.info(f"⏭️  {filter_name}: SKIP ({reason})")
+            logger.info(f"⏭️ {filter_name}: SKIP ({reason})")
 
     logger.info(f"\n{'='*60}")
     logger.info(f"🆙 Filters to update: {len(filters_to_update)}/{len(blocklists)}")
