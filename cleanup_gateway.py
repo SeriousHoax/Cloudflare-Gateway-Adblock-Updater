@@ -52,7 +52,7 @@ async def main():
             logger.info(f"Processing cleanup for: {filter_name}")
 
             # --- Delete Policy ---
-            policy_name = f"Block {filter_name}"
+            policy_name = filter_name
             policy_to_delete = next((p for p in all_policies if p['name'] == policy_name), None)
             
             if policy_to_delete:
