@@ -1,0 +1,38 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments (if used locally)
+.venv/
+venv/
+env/
+
+# Local environment variables
+.env
+.env.*.local
+
+# Python tooling cache
+.pytest_cache/
+.cache/
+.coverage
+htmlcov/
+
+# Type checker caches
+.mypy_cache/
+
+# IDE / editor directories
+.idea/
+.vscode/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Test environment
+test
+.test
