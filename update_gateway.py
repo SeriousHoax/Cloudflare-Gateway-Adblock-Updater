@@ -52,6 +52,19 @@ headers = {
 session = requests.Session()
 session.headers.update(headers)
 
+# Blocklists configuration with explicit priorities
+# Priority order (lower number = higher priority):
+# 1-9999: Reserved for custom policies (Allow Rules, Content Blocking, etc.)
+# 10000+: Hagezi filters (ordered by importance)
+blocklists: List[Dict[str, str]] = [
+    {
+        "name": "Hagezi Pro++",
+        "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt",
+        "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+        "priority": 10000
+    }
+]
+
 # Version tracking functions
 def extract_version_from_description(description: str) -> Optional[str]:
     """
@@ -789,18 +802,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
 
     return {'success': True, 'filter': filter_name, 'domains': len(target_domains), 'lists': len(final_list_ids)}
 
-# Blocklists configuration with explicit priorities
-# Priority order (lower number = higher priority):
-# 1-9999: Reserved for custom policies (Allow Rules, Content Blocking, etc.)
-# 10000+: Hagezi filters (ordered by importance)
-blocklists: List[Dict[str, str]] = [
-    {
-        "name": "Hagezi Pro++",
-        "url": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt",
-        "backup_url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
-        "priority": 10000
-    }
-]
+
 
 # Execution
 if __name__ == "__main__":
