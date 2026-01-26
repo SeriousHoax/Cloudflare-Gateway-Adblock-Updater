@@ -822,7 +822,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
         created_ids = asyncio.run(create_new_chunks())
         new_list_ids = [lid for lid in created_ids if lid]
 
-    # Cleanup empty lists
+    # Identify empty lists and prepare final list IDs
     # If patches caused a list to become empty (and no appends filled it), we should delete it
     # Check capacities
     lists_to_delete = []
@@ -833,15 +833,16 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
             lists_to_delete.append(lst)
         else:
             final_list_ids.append(lst['id'])
-            
+    
+    final_list_ids.extend(new_list_ids)
+
+    # Update/Create Policy FIRST (this removes references to empty lists)
+    policy_success = update_policy_for_filter(filter_config, final_list_ids, len(target_domains), cached_rules, current_version)
+    
+    # Now delete empty lists after policy no longer references them
     if lists_to_delete:
         logger.info(f"Deleting {len(lists_to_delete)} empty lists...")
         asyncio.run(async_delete_lists_batch(lists_to_delete))
-        
-    final_list_ids.extend(new_list_ids)
-
-    # Update/Create Policy
-    policy_success = update_policy_for_filter(filter_config, final_list_ids, len(target_domains), cached_rules, current_version)
 
     if not policy_success:
         return {'success': False, 'filter': filter_name}
