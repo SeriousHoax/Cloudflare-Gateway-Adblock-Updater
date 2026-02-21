@@ -347,6 +347,13 @@ async def async_api_request(session: aiohttp.ClientSession, method: str, url: st
                     await asyncio.sleep(sleep_time)
                     continue
                 
+                # Retry on 400 for mutating requests (PATCH/POST/PUT) — can be transient conflicts
+                if response.status == 400 and method.upper() in ('PATCH', 'POST', 'PUT') and attempt < MAX_RETRIES:
+                    sleep_time = BACKOFF_FACTOR * (2 ** (attempt - 1))
+                    logger.warning(f"⚠️ Bad request (400) on {method}. Retry {attempt}/{MAX_RETRIES} in {sleep_time}s...")
+                    await asyncio.sleep(sleep_time)
+                    continue
+                
                 result = await response.json()
                 return {'status': response.status, 'data': result}
                 
@@ -491,7 +498,8 @@ async def async_patch_list(session: aiohttp.ClientSession, semaphore: asyncio.Se
                 await asyncio.sleep(API_DELAY)
                 return True
             else:
-                logger.warning(f"  ⚠️ Failed to patch {list_name}: {result['status']}")
+                err_detail = result.get('data', {})
+                logger.warning(f"  ⚠️ Failed to patch {list_name}: {result['status']} - {err_detail}")
                 return False
         except Exception as e:
             logger.error(f"  🚫 Error patching {list_name}: {e}")
