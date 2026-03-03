@@ -348,7 +348,12 @@ async def async_api_request(session: aiohttp.ClientSession, method: str, url: st
                     continue
                 
                 # Retry on 400 for mutating requests (PATCH/POST/PUT) — can be transient conflicts
+                # But skip retry if the error is semantic (e.g. "not found in list") — retrying won't help
                 if response.status == 400 and method.upper() in ('PATCH', 'POST', 'PUT') and attempt < MAX_RETRIES:
+                    result_body = await response.json()
+                    errors = result_body.get('errors', [])
+                    if any('not found in list' in e.get('message', '') for e in errors):
+                        return {'status': response.status, 'data': result_body}
                     sleep_time = BACKOFF_FACTOR * (2 ** (attempt - 1))
                     logger.warning(f"⚠️ Bad request (400) on {method}. Retry {attempt}/{MAX_RETRIES} in {sleep_time}s...")
                     await asyncio.sleep(sleep_time)
@@ -497,6 +502,16 @@ async def async_patch_list(session: aiohttp.ClientSession, semaphore: asyncio.Se
                 logger.info(f"  ♻️ Patched {list_name}: -{len(remove)} / +{len(append)}")
                 await asyncio.sleep(API_DELAY)
                 return True
+            elif result['status'] == 400:
+                err_data = result.get('data', {})
+                errors = err_data.get('errors', [])
+                # If every error is just "item not found", the desired state is already achieved
+                if errors and all('not found in list' in e.get('message', '') for e in errors):
+                    logger.info(f"  ✅ {list_name}: items already removed (skipped as no-op)")
+                    await asyncio.sleep(API_DELAY)
+                    return True
+                logger.warning(f"  ⚠️ Failed to patch {list_name}: {result['status']} - {err_data}")
+                return False
             else:
                 err_detail = result.get('data', {})
                 logger.warning(f"  ⚠️ Failed to patch {list_name}: {result['status']} - {err_detail}")
