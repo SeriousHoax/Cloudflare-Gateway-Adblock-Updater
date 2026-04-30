@@ -32,10 +32,10 @@ MAX_RETRIES = 3
 BACKOFF_FACTOR = 5
 CHUNK_SIZE = 1000
 MAX_LISTS_WARNING = 900
-API_DELAY = 0.1   # Small delay between requests to avoid rate limiting
+API_DELAY = 0.5   # Small delay between requests to avoid rate limiting
 
 # Async configuration
-MAX_CONCURRENT_REQUESTS = int(os.environ.get('MAX_CONCURRENT_REQUESTS', '25'))
+MAX_CONCURRENT_REQUESTS = int(os.environ.get('MAX_CONCURRENT_REQUESTS', '5'))
 
 # Version tracking configuration
 Fresh_Start = os.environ.get('FRESH_START', 'false').lower() == 'true'
