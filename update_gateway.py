@@ -779,17 +779,51 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
         # Update capacity locally
         list_capacities[list_id] -= len(domains)
 
-    # Plan additions (fill holes + use space)
-    for lst in existing_lists:
+    # ── Rebalance: drain surplus lists when the filter has shrunk ────────────
+    ideal_list_count = max(1, -(-len(target_domains) // CHUNK_SIZE))  # ceil division
+
+    if len(existing_lists) > ideal_list_count:
+        surplus_lists = existing_lists[ideal_list_count:]
+
+        logger.info(
+            f"🗜️ Rebalancing: {len(existing_lists)} lists exist, "
+            f"{ideal_list_count} needed. Draining {len(surplus_lists)} surplus list(s)..."
+        )
+
+        for lst in surplus_lists:
+            list_id = lst['id']
+
+            # All domains currently in this list (pre-patch state)
+            all_domains_in_list = [d for d, lid in remote_domain_to_list_map.items() if lid == list_id]
+
+            # Domains still in target_domains (not globally removed) that need rehoming
+            domains_to_rehome = [d for d in all_domains_in_list if d not in to_remove]
+
+            if domains_to_rehome:
+                # Queue them for placement into kept lists
+                to_add.extend(domains_to_rehome)
+                # Remove from the map so capacity logic below doesn't double-count
+                for d in domains_to_rehome:
+                    del remote_domain_to_list_map[d]
+
+            # Wipe this list entirely (covers both globally-removed and rehomed domains)
+            if list_id not in patches:
+                patches[list_id] = {'remove': [], 'append': []}
+            patches[list_id]['remove'] = all_domains_in_list
+            list_capacities[list_id] = 0
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Plan additions — only fill kept lists (surplus lists are wiped above)
+    lists_to_fill = existing_lists[:ideal_list_count]
+    for lst in lists_to_fill:
         list_id = lst['id']
         current_cap = list_capacities.get(list_id, 0)
         space = CHUNK_SIZE - current_cap
-        
+
         if space > 0 and to_add:
-            # Take as much as fits
             chunk_add = to_add[:space]
             to_add = to_add[space:]
-            
+
             if list_id not in patches:
                 patches[list_id] = {'remove': [], 'append': []}
             patches[list_id]['append'] = chunk_add
