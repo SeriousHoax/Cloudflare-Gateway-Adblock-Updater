@@ -59,23 +59,26 @@ session.headers.update(headers)
 blocklists: List[Dict[str, str]] = [
     {
         "name": "Hagezi Pro++",
-        "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro.plus-onlydomains.txt",
-        "backup_url1": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt",
-        "backup_url2": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
+        "url": "https://hagezi-mirror.dnsbunker.org/wildcard/pro.plus-onlydomains.txt",
+        "backup_url1": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro.plus-onlydomains.txt",
+        "backup_url2": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt",
+        "backup_url3": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro.plus-onlydomains.txt",
         "priority": 10000
     },
     {
         "name": "Hagezi-DynDNS",
-        "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/dyndns-onlydomains.txt",
-        "backup_url1": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/dyndns-onlydomains.txt",
-        "backup_url2": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
+        "url": "https://hagezi-mirror.dnsbunker.org/wildcard/dyndns-onlydomains.txt",
+        "backup_url1": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/dyndns-onlydomains.txt",
+        "backup_url2": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/dyndns-onlydomains.txt",
+        "backup_url3": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/dyndns-onlydomains.txt",
         "priority": 20000
     },
     {
         "name": "Hagezi DoH/VPN",
-        "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
-        "backup_url1": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
-        "backup_url2": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+        "url": "https://hagezi-mirror.dnsbunker.org/wildcard/doh-onlydomains.txt",
+        "backup_url1": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+        "backup_url2": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
+        "backup_url3": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
         "priority": 30000,
         "location_ids": ["Home-Router"]
     }
@@ -131,9 +134,9 @@ def build_description_with_version(filter_name: str, list_count: int,
     return base_description
 
 
-def fetch_blocklist_version(url: str, backup_url1: Optional[str], backup_url2: Optional[str], filter_name: str) -> Optional[str]:
+def fetch_blocklist_version(url: str, backup_url1: Optional[str], backup_url2: Optional[str], backup_url3: Optional[str], filter_name: str) -> Optional[str]:
     """Fetch blocklist header to extract version using streaming."""
-    for fetch_url in [url, backup_url1, backup_url2]:
+    for fetch_url in [url, backup_url1, backup_url2, backup_url3]:
         if fetch_url is None:
             continue
         try:
@@ -181,6 +184,7 @@ def should_update_filter(filter_config: Dict, cached_rules: List[Dict]) -> tuple
         filter_config['url'],
         filter_config.get('backup_url1'),
         filter_config.get('backup_url2'),
+        filter_config.get('backup_url3'),
         filter_name
     )
     
@@ -617,6 +621,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
     primary_url = filter_config["url"]
     backup_url1 = filter_config.get("backup_url1")
     backup_url2 = filter_config.get("backup_url2")
+    backup_url3 = filter_config.get("backup_url3")
     list_prefix = f"{filter_name.replace(' ', '_')}_List_"
     policy_name = filter_name
 
@@ -627,7 +632,7 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
     # Fetch blocklist source
     fetched = False
     content = None
-    for url in [primary_url, backup_url1, backup_url2]:
+    for url in [primary_url, backup_url1, backup_url2, backup_url3]:
         if url is None:
             continue
         try:
