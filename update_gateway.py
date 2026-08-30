@@ -75,7 +75,7 @@ blocklists: List[Dict[str, str]] = [
     },
     {
         "name": "Hagezi DoH/VPN",
-        "url": "https://hagezi-mirror.dnsbunker.org/wildcard/doh-onlydomains.txt",
+        "url": "https://hagezi-mirror.dnsbunker.org/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
         "backup_url1": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
         "backup_url2": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
         "backup_url3": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/doh-vpn-proxy-bypass-onlydomains.txt",
