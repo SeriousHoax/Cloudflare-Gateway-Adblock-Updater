@@ -4,6 +4,8 @@
 
 The Python script in this repository automates updating your Cloudflare Zero Trust Gateway policy with the highly recommended and effective [Hagezi](https://github.com/hagezi/dns-blocklists) Multi Pro++ DNS filter list.
 
+- If you prefer JavaScript, then a Node.js version of this script is also available at: [Cloudflare ZeroTrust Adblock Updater](https://github.com/SeriousHoax/Cloudflare-ZeroTrust-Adblock-Updater)
+
 ## Features
 
 - **Automated DNS filter updates**
@@ -37,7 +39,6 @@ The Python script in this repository automates updating your Cloudflare Zero Tru
 
   Designed to run seamlessly via GitHub Actions or on your local device, making scheduled and hands-off updates easy.
 
-
 # Setup Guide
 
 ## Cloudflare credentials
@@ -58,13 +59,13 @@ https://dash.cloudflare.com/1234567890abcdef1234567890abcdef
 
 The `1234567890abcdef1234567890abcdef` portion is your `CLOUDFLARE_ACCOUNT_ID`.
 
-3. Create an API token:
+1. Create an API token:
    - Go to your profile's API tokens page: [Cloudflare API-Tokens](https://dash.cloudflare.com/profile/api-tokens)
    - Click **Create Token** and choose **Create Custom Token**.
    - Give the token your preferred name.
    - Add the following under the **Permissions** section:
-     * **Account** | **Zero Trust** | **Read**
-     * **Account** | **Zero Trust** | **Edit** 
+     - **Account** | **Zero Trust** | **Read**
+     - **Account** | **Zero Trust** | **Edit**
    - Click **Continue to summary**, then click **Create Token**.
    - **Copy the token immediately** as Cloudflare only shows it once.
 
@@ -73,6 +74,7 @@ The `1234567890abcdef1234567890abcdef` portion is your `CLOUDFLARE_ACCOUNT_ID`.
 Security note: keep the token secret. Use GitHub repository secrets rather than committing values to the repo. Also, store the token in a safe place outside of GitHub if required.
 
 ## GitHub Configuration
+
 Next you should create a fork of this project on your GitHub. You can do this by clicking the "**Fork**" button in the top right of my repo's page.
 
 ### Add the values to GitHub as Actions secrets
@@ -88,6 +90,7 @@ Next you should create a fork of this project on your GitHub. You can do this by
 - Go to **Settings** → **Actions** → **General** in the repository and confirm workflows are allowed to run.
 
 ## GitHub Workflow
+
 You should configure your GitHub Workflow file to suit your needs. The updater workflow in my main branch refers to my personal branch, which you should avoid using. You should edit your workflow file to remove that reference. An example GitHub workflow file should look like this: [Example Workflow File](https://github.com/SeriousHoax/Cloudflare-Gateway-Adblock-Updater/blob/personal/.github/workflows/update-gateway.yml)
 
 ## Troubleshooting
