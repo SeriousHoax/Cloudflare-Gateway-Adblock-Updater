@@ -59,6 +59,7 @@ session.headers.update(headers)
 blocklists: List[Dict[str, str]] = [
     {
         "name": "Hagezi Pro++",
+        "policy_name": "github-auto-policy-hagezi",
         "url": "https://hagezi-mirror.dnsbunker.org/wildcard/pro.plus-onlydomains.txt",
         "backup_url1": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro.plus-onlydomains.txt",
         "backup_url2": "https://gitlab.com/hagezi/mirror/-/raw/main/dns-blocklists/wildcard/pro.plus-onlydomains.txt",
@@ -91,8 +92,8 @@ def load_versions_from_policies(cached_rules: List[Dict]) -> Dict[str, str]:
     
     for rule in cached_rules:
         rule_name = rule.get('name', '')
-        # Check if this is a Hagezi policy (starts with "Hagezi")
-        if rule_name.startswith('Hagezi'):
+        # Check if this is a Hagezi policy or our custom policy name
+        if rule_name.startswith('Hagezi') or rule_name == 'github-auto-policy-hagezi':
             filter_name = rule_name
             description = rule.get('description', '')
             version = extract_version_from_description(description)
@@ -150,7 +151,7 @@ def should_update_filter(filter_config: Dict, cached_rules: List[Dict]) -> tuple
     Returns: (should_update: bool, current_version: str, reason: str)
     """
     filter_name = filter_config['name']
-    policy_name = filter_name
+    policy_name = filter_config.get('policy_name', filter_name)
     
     # Fresh start if flag set
     if Fresh_Start:
@@ -484,7 +485,7 @@ async def async_patch_list(session: aiohttp.ClientSession, semaphore: asyncio.Se
                     logger.info(f"  ✅ {list_name}: items already removed (skipped as no-op)")
                     await asyncio.sleep(API_DELAY)
                     return True
-                logger.warning(f"  ⚠️ Failed to patch {list_name}: {result['status']} - {err_data}")
+                logger.warning(f"  ⚠️️ Failed to patch {list_name}: {result['status']} - {err_data}")
                 return False
             else:
                 err_detail = result.get('data', {})
@@ -516,7 +517,7 @@ def update_policy_for_filter(filter_config: Dict, final_list_ids: List[str],
                              version: Optional[str] = None) -> bool:
     """Update or create the policy for a filter with version info in description"""
     filter_name = filter_config["name"]
-    policy_name = filter_name
+    policy_name = filter_config.get("policy_name", filter_name)
 
     if not final_list_ids:
         logger.warning(f"⚠️ Total list count is 0! Skipping policy update.")
@@ -568,12 +569,12 @@ def process_filter_async(filter_config: Dict, cached_lists: List[Dict],
                         cached_rules: List[Dict]) -> Dict:
     """Process a filter with diff-based updates."""
     filter_name = filter_config["name"]
+    policy_name = filter_config.get("policy_name", filter_name)
     primary_url = filter_config["url"]
     backup_url1 = filter_config.get("backup_url1")
     backup_url2 = filter_config.get("backup_url2")
     backup_url3 = filter_config.get("backup_url3")
     list_prefix = f"{filter_name.replace(' ', '_')}_List_"
-    policy_name = filter_name
 
     logger.info(f"{'='*60}")
     logger.info(f"🧵 Processing filter (DIFF-SYNC): {filter_name}")
@@ -873,7 +874,7 @@ if __name__ == "__main__":
     logger.info("🎬 Starting Cloudflare Gateway Adblock Update...\n")
     logger.info(f"🆕 Fresh start: {'YES' if Fresh_Start else 'NO'}")
     logger.info(f"🧬 Check versions: {'ENABLED' if CHECK_VERSIONS else 'DISABLED'}")
-    logger.info(f"🏎️ Max concurrent requests: {MAX_CONCURRENT_REQUESTS}\n")
+    logger.info(f"🏎️️ Max concurrent requests: {MAX_CONCURRENT_REQUESTS}\n")
 
     # Cache current rules for version checking from policy descriptions
     logger.info("📡 Fetching current policies to check versions...")
@@ -960,7 +961,6 @@ if __name__ == "__main__":
             stats["errors"].append(bl['name'])
 
     script_elapsed = time.time() - script_start
-
 
     # Summary
     logger.info(f"\n{'='*60}")
