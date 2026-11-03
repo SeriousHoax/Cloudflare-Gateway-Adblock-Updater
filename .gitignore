@@ -37,3 +37,4 @@ logs/
 test
 .test
 *.bat
+*.cmd
